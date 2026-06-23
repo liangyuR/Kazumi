@@ -968,29 +968,31 @@ class _VideoPageState extends State<VideoPage>
   }
 
   DownloadEpisode? _getEpisodeFromRecords(
-      int episodeNumber, String episodePageUrl) {
+      int episodeNumber, String episodePageUrl, String episodeName) {
     final bangumiId = videoPageController.bangumiItem.id;
     final pluginName = videoPageController.currentPlugin.name;
 
     for (final record in downloadController.records) {
       if (record.bangumiId == bangumiId && record.pluginName == pluginName) {
-        if (episodePageUrl.isNotEmpty) {
-          for (final episode in record.episodes.values) {
-            if (episode.episodePageUrl == episodePageUrl) {
-              return episode;
-            }
-          }
-        }
-        return record.episodes[episodeNumber];
+        return downloadController
+            .findEpisodeInRecord(
+              record,
+              episodeNumber: episodeNumber,
+              episodePageUrl: episodePageUrl,
+              episodeName: episodeName,
+            )
+            ?.episode;
       }
     }
     return null;
   }
 
-  Widget _buildDownloadStatusIcon(int episodeNumber, String episodePageUrl) {
+  Widget _buildDownloadStatusIcon(
+      int episodeNumber, String episodePageUrl, String episodeName) {
     // 离线模式下不显示下载状态图标
     if (videoPageController.isOfflineMode) return const SizedBox.shrink();
-    final episode = _getEpisodeFromRecords(episodeNumber, episodePageUrl);
+    final episode =
+        _getEpisodeFromRecords(episodeNumber, episodePageUrl, episodeName);
     if (episode == null) return const SizedBox.shrink();
     switch (episode.status) {
       case DownloadStatus.completed:
@@ -1033,6 +1035,9 @@ class _VideoPageState extends State<VideoPage>
           int count = 1;
           for (var urlItem in road.data) {
             int count0 = count;
+            final episodeName = count0 - 1 < road.identifier.length
+                ? road.identifier[count0 - 1]
+                : '第$count0集';
             cardList.add(Container(
               margin: const EdgeInsets.only(bottom: 4),
               child: Material(
@@ -1074,7 +1079,7 @@ class _VideoPageState extends State<VideoPage>
                             ],
                             Expanded(
                                 child: Text(
-                              road.identifier[count0 - 1],
+                              episodeName,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
@@ -1090,7 +1095,11 @@ class _VideoPageState extends State<VideoPage>
                                           .colorScheme
                                           .onSurface),
                             )),
-                            _buildDownloadStatusIcon(count0, urlItem),
+                            _buildDownloadStatusIcon(
+                              count0,
+                              urlItem,
+                              episodeName,
+                            ),
                             const SizedBox(width: 2),
                           ],
                         ),
