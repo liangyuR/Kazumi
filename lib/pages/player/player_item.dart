@@ -576,6 +576,7 @@ class _PlayerItemState extends State<PlayerItem>
       if (currentEpisode <= 0 || currentRoadData.data.isEmpty) return;
       final episodeRef = videoPageController.resolveEpisode(selection);
       if (episodeRef == null) return;
+      final queueIndex = episodeRef.listIndex - 1;
 
       if (playerController.playback.duration <= Duration.zero) return;
 
@@ -607,7 +608,7 @@ class _PlayerItemState extends State<PlayerItem>
           updatePosition: playerController.playback.currentPosition,
           bufferedPosition: playerController.playback.buffer,
           speed: playerController.playback.playerSpeed,
-          queueIndex: safeEpisodeIndex,
+          queueIndex: queueIndex,
           canSkipToNext: canSkipToNext,
           canSkipToPrevious: canSkipToPrevious,
         ),
