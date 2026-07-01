@@ -25,21 +25,48 @@ class EpisodeIdentity {
   /// 该集所属的“原始线路”下标（规则抓取时的 road 次序，顺序无关）。
   final int roadIndex;
 
+  /// 该集所属的稳定线路身份。由订阅规则在抓取阶段产出；下游持久化身份时
+  /// 应优先使用 [roadId] + [stableId]，而不是线路数组下标。
+  final String roadId;
+
   const EpisodeIdentity({
     required this.stableId,
     required this.pageUrl,
     required this.title,
     required this.roadIndex,
+    this.roadId = '',
     this.ordinal,
   });
 
+  EpisodeIdentity copyWith({
+    String? stableId,
+    String? pageUrl,
+    String? title,
+    int? ordinal,
+    int? roadIndex,
+    String? roadId,
+  }) {
+    return EpisodeIdentity(
+      stableId: stableId ?? this.stableId,
+      pageUrl: pageUrl ?? this.pageUrl,
+      title: title ?? this.title,
+      ordinal: ordinal ?? this.ordinal,
+      roadIndex: roadIndex ?? this.roadIndex,
+      roadId: roadId ?? this.roadId,
+    );
+  }
+
   @override
   String toString() =>
-      'EpisodeIdentity(stableId: $stableId, ordinal: $ordinal, title: $title)';
+      'EpisodeIdentity(stableId: $stableId, roadId: $roadId, ordinal: $ordinal, title: $title)';
 }
 
 class Road {
   String name;
+
+  /// 稳定线路身份。它由规则显式 XPath 或抓取结果派生，避免持久化逻辑依赖
+  /// 当前 roadList 数组下标。
+  String roadId;
 
   /// 由 `List<String>` 升级为 `List<EpisodeIdentity>`：规则直接产出每集身份。
   /// 原 `identifier`（标题数组）已并入 [EpisodeIdentity.title]。
@@ -48,6 +75,7 @@ class Road {
   Road({
     required this.name,
     required this.data,
+    this.roadId = '',
   });
 
   /// 按 [EpisodeIdentity.stableId] 定位某集在本线路中的位置（0-based），未命中返回 -1。
@@ -55,10 +83,5 @@ class Road {
     final id = stableId.trim();
     if (id.isEmpty) return -1;
     return data.indexWhere((e) => e.stableId == id);
-  }
-
-  /// 按 [EpisodeIdentity.ordinal] 定位某集（离线列表按下载集号查找），未命中返回 -1。
-  int indexOfOrdinal(int ordinal) {
-    return data.indexWhere((e) => e.ordinal == ordinal);
   }
 }

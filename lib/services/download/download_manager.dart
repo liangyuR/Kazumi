@@ -376,7 +376,7 @@ class DownloadManager implements IDownloadManager {
       } on _NotM3u8Exception {
         KazumiLogger().i(
           'DownloadManager: URL is not M3U8, falling back to direct file download '
-          'for episode ${episode.episodeNumber}',
+          'for ${downloadEpisodeDisplayName(episode, fallbackKey: task.downloadKey)}',
         );
         await _runDirectFileDownload(
           task: task,
@@ -585,7 +585,7 @@ class DownloadManager implements IDownloadManager {
       _notifyProgress(task.recordKey, task.downloadKey, episode);
 
       KazumiLogger().i(
-        'DownloadManager: episode ${episode.episodeNumber} completed. '
+        'DownloadManager: ${downloadEpisodeDisplayName(episode, fallbackKey: task.downloadKey)} completed. '
         '${segments.length} segments, ${(episode.totalBytes / 1024 / 1024).toStringAsFixed(1)} MB',
       );
     } on _InsufficientStorageException catch (e) {
@@ -734,7 +734,7 @@ class DownloadManager implements IDownloadManager {
       _notifyProgress(task.recordKey, task.downloadKey, episode);
 
       KazumiLogger().i(
-        'DownloadManager: episode ${episode.episodeNumber} completed (direct download). '
+        'DownloadManager: ${downloadEpisodeDisplayName(episode, fallbackKey: task.downloadKey)} completed (direct download). '
         '${(episode.totalBytes / 1024 / 1024).toStringAsFixed(1)} MB',
       );
     } on _InsufficientStorageException catch (e) {

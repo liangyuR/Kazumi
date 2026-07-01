@@ -219,31 +219,6 @@ class GStorage {
     }
   }
 
-  static Future<void> patchHistory(String backupFilePath) async {
-    final backupFile = File(backupFilePath);
-    final backupContent = await backupFile.readAsBytes();
-    final tempBox = await Hive.openBox('tempHistoryBox', bytes: backupContent);
-    final tempBoxItems = tempBox.toMap().entries;
-
-    for (var tempBoxItem in tempBoxItems) {
-      final tempHistory = tempBoxItem.value as History;
-      tempHistory.entryKind = HistoryEntryKind.normalize(tempHistory.entryKind);
-      final targetKey = tempHistory.key;
-      if (histories.get(targetKey) != null) {
-        if (histories
-            .get(targetKey)!
-            .lastWatchTime
-            .isBefore(tempHistory.lastWatchTime)) {
-          await histories.delete(targetKey);
-          await histories.put(targetKey, tempHistory);
-        }
-      } else {
-        await histories.put(targetKey, tempHistory);
-      }
-    }
-    await tempBox.close();
-  }
-
   static Future<void> restoreCollectibles(String backupFilePath) async {
     final backupFile = File(backupFilePath);
     final backupContent = await backupFile.readAsBytes();

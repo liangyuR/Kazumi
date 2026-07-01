@@ -356,11 +356,13 @@ class _PlayerItemState extends State<PlayerItem>
   Future<void> _changeEpisodeByStableId(
     String stableId, {
     int currentRoad = 0,
+    String roadId = '',
     int offset = 0,
   }) async {
     final selection = findEpisodeSelectionByStableId(
       videoPageController.roadList,
       stableId,
+      preferredRoadId: roadId,
       preferredRoad: currentRoad,
     );
     if (selection == null) {

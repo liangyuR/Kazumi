@@ -13,6 +13,7 @@ EpisodeIdentity _identity(
   String title, {
   int? ordinal,
   int roadIndex = 0,
+  String? roadId,
   String? pageUrl,
 }) {
   return EpisodeIdentity(
@@ -21,6 +22,7 @@ EpisodeIdentity _identity(
     title: title,
     ordinal: ordinal,
     roadIndex: roadIndex,
+    roadId: roadId ?? 'road-$roadIndex',
   );
 }
 
@@ -131,6 +133,7 @@ void main() {
       final roads = [
         Road(
           name: '播放线路1',
+          roadId: 'road-0',
           data: [
             _identity('/episode/3', '第三话', ordinal: 3),
             _identity('/episode/1', '第一话', ordinal: 1),
@@ -138,6 +141,7 @@ void main() {
         ),
         Road(
           name: '播放线路2',
+          roadId: 'road-1',
           data: [
             _identity('/episode/2', '第二话', ordinal: 2, roadIndex: 1),
           ],
@@ -157,12 +161,14 @@ void main() {
       final roads = [
         Road(
           name: '播放线路1',
+          roadId: 'road-0',
           data: [
             _identity('/episode/1', '第一话', ordinal: 1),
           ],
         ),
         Road(
           name: '播放线路2',
+          roadId: 'road-1',
           data: [
             _identity('/episode/1', '第一话', ordinal: 1, roadIndex: 1),
           ],
@@ -184,12 +190,14 @@ void main() {
       final roads = [
         Road(
           name: '播放线路1',
+          roadId: 'road-0',
           data: [
             _identity('/episode/1', '线路1 第1话', ordinal: 1),
           ],
         ),
         Road(
           name: '播放线路2',
+          roadId: 'road-1',
           data: [
             _identity('/episode/1', '线路2 第1话', ordinal: 1, roadIndex: 1),
           ],
@@ -199,8 +207,8 @@ void main() {
       final selection = findEpisodeSelectionForHistoryProgress(
         roads,
         stableId: '/episode/1',
-        episode: 1,
-        road: 1,
+        roadId: 'road-1',
+        preferredRoad: 1,
       );
 
       expect(selection, isNotNull);
@@ -213,6 +221,7 @@ void main() {
       final roads = [
         Road(
           name: '播放线路1',
+          roadId: 'road-0',
           data: [
             _identity('/episode/3', '第三话', ordinal: 3),
             _identity('/episode/1', '第一话', ordinal: 1),
@@ -224,17 +233,18 @@ void main() {
         findEpisodeSelectionForHistoryProgress(
           roads,
           stableId: '/missing',
-          episode: 1,
-          road: 0,
+          roadId: 'road-0',
+          preferredRoad: 0,
         ),
         isNull,
       );
     });
 
-    test('history restore keeps index fallback for legacy progress', () {
+    test('history restore rejects progress without stableId', () {
       final roads = [
         Road(
           name: '播放线路1',
+          roadId: 'road-0',
           data: [
             _identity('/episode/3', '第三话', ordinal: 3),
             _identity('/episode/1', '第一话', ordinal: 1),
@@ -245,13 +255,11 @@ void main() {
       final selection = findEpisodeSelectionForHistoryProgress(
         roads,
         stableId: '',
-        episode: 2,
-        road: 0,
+        roadId: '',
+        preferredRoad: 0,
       );
 
-      expect(selection, isNotNull);
-      expect(selection!.road, 0);
-      expect(selection.episode, 2);
+      expect(selection, isNull);
     });
   });
 
@@ -282,28 +290,34 @@ void main() {
         road: 2,
         episode: 5,
         stableId: '/play/1?part=a',
+        roadId: 'source-main',
       );
 
       final identity = SyncPlayEpisodeIdentity.parse(fileName);
 
       expect(identity, isNotNull);
       expect(identity!.bangumiId, 123);
-      expect(identity.road, 2);
+      expect(identity.roadId, 'source-main');
       expect(identity.stableId, '/play/1?part=a');
       expect(identity.episode, isNull);
     });
 
-    test('keeps legacy playlist-position file names compatible', () {
-      final fileName = SyncPlayEpisodeIdentity.fileNameFor(
-        bangumiId: 123,
-        road: 2,
-        episode: 5,
-        stableId: '',
+    test('rejects new playlist-position file names without stableId', () {
+      expect(
+        () => SyncPlayEpisodeIdentity.fileNameFor(
+          bangumiId: 123,
+          road: 2,
+          episode: 5,
+          stableId: '',
+        ),
+        throwsArgumentError,
       );
+    });
 
-      final identity = SyncPlayEpisodeIdentity.parse(fileName);
+    test('parses legacy playlist-position file names without targeting them',
+        () {
+      final identity = SyncPlayEpisodeIdentity.parse('123[5]');
 
-      expect(fileName, '123[5]');
       expect(identity, isNotNull);
       expect(identity!.bangumiId, 123);
       expect(identity.episode, 5);
@@ -317,6 +331,7 @@ void main() {
           road: 1,
           episode: 1,
           stableId: 'shared-episode',
+          roadId: 'source-b',
         ),
       );
 
@@ -324,6 +339,7 @@ void main() {
       expect(
         identity!.targetsStableEpisode(
           currentStableId: 'shared-episode',
+          currentRoadId: 'source-a',
           currentRoad: 0,
         ),
         isFalse,
@@ -331,6 +347,7 @@ void main() {
       expect(
         identity.targetsStableEpisode(
           currentStableId: 'shared-episode',
+          currentRoadId: 'source-b',
           currentRoad: 1,
         ),
         isTrue,
@@ -376,6 +393,25 @@ void main() {
       expect(episode.road, 1);
     });
 
+    test('does not fall back to another road when roadId is known', () {
+      final snapshot = buildOfflineRoadListSnapshot([
+        _episode(1, '线路1 第1话', 0,
+            stableId: 'shared-episode', roadId: 'source-a'),
+        _episode(1, '线路2 第1话', 1,
+            stableId: 'shared-episode', roadId: 'source-b'),
+      ]);
+
+      final missingRoadIdentity = _identity(
+        'shared-episode',
+        '线路3 第1话',
+        ordinal: 1,
+        roadId: 'source-c',
+      );
+      final episode = snapshot.episodeForIdentity(missingRoadIdentity, 0);
+
+      expect(episode, isNull);
+    });
+
     test('uses stableId before ordinal when downloaded numbers collide', () {
       final snapshot = buildOfflineRoadListSnapshot([
         _episode(1, '正片 第1话', 0, stableId: 'main-1'),
@@ -386,6 +422,7 @@ void main() {
         'special-1',
         '特别篇',
         ordinal: 1,
+        roadId: 'source-0',
       );
       final episode = snapshot.episodeForIdentity(specialIdentity, 0);
 
@@ -408,42 +445,37 @@ void main() {
       );
     });
 
-    test('uses rule ordinal as stored download episode number', () {
+    test('uses rule ordinal as stored download episode ordinal', () {
       final identity = _identity('/episode/13', '第13话', ordinal: 13);
 
       expect(
-        downloadEpisodeNumberForSelection(listIndex: 1, identity: identity),
+        downloadEpisodeOrdinalForSelection(identity),
         13,
       );
     });
 
-    test('falls back to list index when rule provides no ordinal', () {
+    test('keeps download ordinal empty when rule provides no ordinal', () {
       final identity = _identity('/ova', 'OVA', ordinal: null);
 
       expect(
-        downloadEpisodeNumberForSelection(listIndex: 4, identity: identity),
-        4,
+        downloadEpisodeOrdinalForSelection(identity),
+        isNull,
       );
     });
 
-    test('detects downloaded episodes by stableId before url', () {
+    test('detects downloaded episodes by stableId and roadId', () {
       final identity = _identity(
         '/play/1',
         '第1话',
         ordinal: 1,
+        roadId: 'source-a',
         pageUrl: 'https://new.example.com/play/1',
       );
 
       expect(
         isDownloadedEpisodeIdentity(
           identity,
-          downloadedStableIds: {(stableId: '/play/1', road: 0)},
-          downloadedLegacyUrls: {
-            (
-              pageUrl: 'https://old.example.com/play/1',
-              road: 0,
-            )
-          },
+          downloadedStableIds: {(stableId: '/play/1', roadId: 'source-a')},
         ),
         isTrue,
       );
@@ -455,21 +487,24 @@ void main() {
         '线路2 第1话',
         ordinal: 1,
         roadIndex: 1,
+        roadId: 'source-b',
       );
 
       expect(
         isDownloadedEpisodeIdentity(
           identity,
-          downloadedStableIds: {(stableId: 'shared-episode', road: 0)},
-          downloadedLegacyUrls: {},
+          downloadedStableIds: {
+            (stableId: 'shared-episode', roadId: 'source-a')
+          },
         ),
         isFalse,
       );
       expect(
         isDownloadedEpisodeIdentity(
           identity,
-          downloadedStableIds: {(stableId: 'shared-episode', road: 1)},
-          downloadedLegacyUrls: {},
+          downloadedStableIds: {
+            (stableId: 'shared-episode', roadId: 'source-b')
+          },
         ),
         isTrue,
       );
@@ -487,16 +522,16 @@ void main() {
 
       final mainKey = downloadKeyForEpisodeIdentity(
         record,
-        episodeNumber: 1,
         road: 0,
+        roadId: 'source-a',
         stableId: 'main-1',
       );
       record.episodes[mainKey] = _episode(1, '正片 第1话', 0, stableId: 'main-1');
 
       final specialKey = downloadKeyForEpisodeIdentity(
         record,
-        episodeNumber: 1,
         road: 0,
+        roadId: 'source-a',
         stableId: 'special-1',
       );
       record.episodes[specialKey] =
@@ -520,21 +555,21 @@ void main() {
 
       final road0Key = downloadKeyForEpisodeIdentity(
         record,
-        episodeNumber: 1,
         road: 0,
+        roadId: 'source-a',
         stableId: 'shared-episode',
       );
-      record.episodes[road0Key] =
-          _episode(1, '线路1 第1话', 0, stableId: 'shared-episode');
+      record.episodes[road0Key] = _episode(1, '线路1 第1话', 0,
+          stableId: 'shared-episode', roadId: 'source-a');
 
       final road1Key = downloadKeyForEpisodeIdentity(
         record,
-        episodeNumber: 1,
         road: 1,
+        roadId: 'source-b',
         stableId: 'shared-episode',
       );
-      record.episodes[road1Key] =
-          _episode(1, '线路2 第1话', 1, stableId: 'shared-episode');
+      record.episodes[road1Key] = _episode(1, '线路2 第1话', 1,
+          stableId: 'shared-episode', roadId: 'source-b');
 
       expect(road0Key, isNot(road1Key));
       expect(record.episodes, hasLength(2));
@@ -543,6 +578,7 @@ void main() {
           record,
           'shared-episode',
           road: 1,
+          roadId: 'source-b',
         )!
             .value
             .episodeName,
@@ -585,7 +621,6 @@ void main() {
 
       final episode = downloadedEpisodeForHistoryPlayback(
         episodes,
-        episodeNumber: 1,
         stableId: 'shared-episode',
         preferredRoad: 1,
       );
@@ -593,6 +628,24 @@ void main() {
       expect(episode, isNotNull);
       expect(episode!.road, 1);
       expect(episode.episodeName, '线路2 第1话');
+    });
+
+    test('does not fall back to another downloaded roadId', () {
+      final episodes = [
+        _episode(1, '线路1 第1话', 0,
+            stableId: 'shared-episode', roadId: 'source-a'),
+        _episode(1, '线路2 第1话', 1,
+            stableId: 'shared-episode', roadId: 'source-b'),
+      ];
+
+      final episode = downloadedEpisodeForHistoryPlayback(
+        episodes,
+        stableId: 'shared-episode',
+        preferredRoad: 0,
+        preferredRoadId: 'source-c',
+      );
+
+      expect(episode, isNull);
     });
 
     test('does not fall back to numeric episode after stableId miss', () {
@@ -603,7 +656,6 @@ void main() {
 
       final episode = downloadedEpisodeForHistoryPlayback(
         episodes,
-        episodeNumber: 1,
         stableId: 'missing-stable-id',
         preferredRoad: 0,
       );
@@ -611,7 +663,7 @@ void main() {
       expect(episode, isNull);
     });
 
-    test('falls back to numeric episode for legacy offline history', () {
+    test('rejects offline history without stableId', () {
       final episodes = [
         _episode(2, '第二话', 0),
         _episode(3, '第三话', 0),
@@ -619,56 +671,14 @@ void main() {
 
       final episode = downloadedEpisodeForHistoryPlayback(
         episodes,
-        episodeNumber: 3,
         stableId: '',
         preferredRoad: 1,
       );
 
-      expect(episode, isNotNull);
-      expect(episode!.episodeNumber, 3);
+      expect(episode, isNull);
     });
 
-    test('limits URL matching to legacy stableId backfill candidates', () {
-      final record = DownloadRecord(
-        1,
-        'subject',
-        '',
-        'plugin',
-        {
-          1: _episode(1, '旧记录', 0, pageUrl: '/play/1'),
-          2: _episode(2, '已有身份', 0, stableId: 'episode-2', pageUrl: '/play/2'),
-          3: _episode(3, '其他线路', 1, pageUrl: '/play/3'),
-        },
-        DateTime(2026),
-      );
-
-      final legacyEntry = legacyDownloadEpisodeEntryForStableIdBackfill(
-        record,
-        episodePageUrl: '/play/1',
-        road: 0,
-      );
-
-      expect(legacyEntry, isNotNull);
-      expect(legacyEntry!.key, 1);
-      expect(
-        legacyDownloadEpisodeEntryForStableIdBackfill(
-          record,
-          episodePageUrl: '/play/2',
-          road: 0,
-        ),
-        isNull,
-      );
-      expect(
-        legacyDownloadEpisodeEntryForStableIdBackfill(
-          record,
-          episodePageUrl: '/play/3',
-          road: 0,
-        ),
-        isNull,
-      );
-    });
-
-    test('keeps legacy numeric key when stableId is missing', () {
+    test('rejects download keys without stableId', () {
       final record = DownloadRecord(
         1,
         'subject',
@@ -679,27 +689,28 @@ void main() {
       );
 
       expect(
-        downloadKeyForEpisodeIdentity(
+        () => downloadKeyForEpisodeIdentity(
           record,
-          episodeNumber: 3,
           road: 2,
+          roadId: '',
           stableId: '',
         ),
-        3,
+        throwsArgumentError,
       );
     });
   });
 }
 
 DownloadEpisode _episode(
-  int episodeNumber,
+  int ordinal,
   String name,
   int road, {
   String stableId = '',
+  String? roadId,
   String? pageUrl,
 }) {
   return DownloadEpisode(
-    episodeNumber,
+    ordinal,
     name,
     road,
     DownloadStatus.completed,
@@ -712,7 +723,8 @@ DownloadEpisode _episode(
     DateTime(2026),
     '',
     0,
-    pageUrl ?? '/episode/$episodeNumber',
+    pageUrl ?? '/episode/$ordinal',
     stableId: stableId,
+    roadId: roadId ?? 'source-$road',
   );
 }

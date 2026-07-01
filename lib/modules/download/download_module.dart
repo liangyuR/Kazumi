@@ -38,31 +38,46 @@ const int _maxDownloadKey = 0x7fffffff;
 
 /// 新下载记录的 Hive map key。
 ///
-/// [DownloadEpisode.episodeNumber] 保留“集序数”语义；`DownloadRecord.episodes`
-/// 的 key 仅作为本地下载任务/目录/缓存定位 key。新记录优先由 stableId 派生，
-/// 避免同一个 ordinal 的不同集互相覆盖；旧记录缺 stableId 时继续使用集序数。
+/// `DownloadRecord.episodes` 的 key 仅作为本地下载任务/目录/缓存定位 key。
+/// 新记录必须由 stableId 派生，避免同一个 ordinal 的不同集互相覆盖。
 int downloadKeyForEpisodeIdentity(
   DownloadRecord record, {
-  required int episodeNumber,
   required int road,
+  required String roadId,
   required String stableId,
 }) {
   final id = stableId.trim();
   if (id.isEmpty) {
-    return episodeNumber;
+    throw ArgumentError.value(
+      stableId,
+      'stableId',
+      'Download key requires a stable episode identity.',
+    );
   }
-  var key = stableDownloadKey(_stableDownloadScopedId(id, road));
+  var key = stableDownloadKey(_stableDownloadScopedId(
+    id,
+    road: road,
+    roadId: roadId,
+  ));
   while (true) {
     final existing = record.episodes[key];
     if (existing == null ||
-        (existing.stableId == id && existing.road == road)) {
+        (existing.stableId == id &&
+            _sameRoadIdentity(existing, road, roadId))) {
       return key;
     }
     key = key == _maxDownloadKey ? 1 : key + 1;
   }
 }
 
-String _stableDownloadScopedId(String stableId, int road) => '$road\n$stableId';
+String _stableDownloadScopedId(
+  String stableId, {
+  required int road,
+  required String roadId,
+}) {
+  final scopedRoad = roadId.trim().isNotEmpty ? roadId.trim() : '$road';
+  return '$scopedRoad\n$stableId';
+}
 
 int stableDownloadKey(String stableId) {
   var hash = 0x811c9dc5;
@@ -77,13 +92,15 @@ MapEntry<int, DownloadEpisode>? downloadEpisodeEntryByStableId(
   DownloadRecord record,
   String stableId, {
   required int road,
+  String roadId = '',
 }) {
   final id = stableId.trim();
   if (id.isEmpty) {
     return null;
   }
   for (final entry in record.episodes.entries) {
-    if (entry.value.stableId == id && entry.value.road == road) {
+    if (entry.value.stableId == id &&
+        _sameRoadIdentity(entry.value, road, roadId)) {
       return entry;
     }
   }
@@ -92,62 +109,90 @@ MapEntry<int, DownloadEpisode>? downloadEpisodeEntryByStableId(
 
 DownloadEpisode? downloadedEpisodeForHistoryPlayback(
   List<DownloadEpisode> episodes, {
-  required int episodeNumber,
   required String stableId,
   int? preferredRoad,
+  String preferredRoadId = '',
 }) {
   final id = stableId.trim();
-  if (id.isNotEmpty) {
-    if (preferredRoad != null) {
-      for (final episode in episodes) {
-        if (episode.stableId == id && episode.road == preferredRoad) {
-          return episode;
-        }
-      }
-    }
-    for (final episode in episodes) {
-      if (episode.stableId == id) {
-        return episode;
-      }
-    }
+  if (id.isEmpty) {
     return null;
   }
   for (final episode in episodes) {
-    if (episode.episodeNumber == episodeNumber) {
-      return episode;
+    if (episode.stableId != id) {
+      continue;
+    }
+    final scopedRoadId = preferredRoadId.trim();
+    if (scopedRoadId.isNotEmpty) {
+      if (episode.roadId == scopedRoadId) {
+        return episode;
+      }
+      continue;
+    }
+    if (preferredRoad != null) {
+      if (episode.road == preferredRoad) {
+        return episode;
+      }
+      continue;
     }
   }
-  return null;
-}
-
-/// 旧下载记录没有 [DownloadEpisode.stableId] 时的迁移匹配入口。
-///
-/// 新链路不再把 URL 当作下载身份；这里仅允许用当前规则身份的 pageUrl
-/// 命中“stableId 为空”的旧记录，然后由调用方写入 stableId。
-MapEntry<int, DownloadEpisode>? legacyDownloadEpisodeEntryForStableIdBackfill(
-  DownloadRecord record, {
-  required String episodePageUrl,
-  required int road,
-}) {
-  final pageUrl = episodePageUrl.trim();
-  if (pageUrl.isEmpty) {
+  if (preferredRoadId.trim().isNotEmpty || preferredRoad != null) {
     return null;
   }
-  for (final entry in record.episodes.entries) {
-    final episode = entry.value;
-    if (episode.stableId.isEmpty &&
-        episode.road == road &&
-        episode.episodePageUrl == pageUrl) {
-      return entry;
+  final stableMatches =
+      episodes.where((episode) => episode.stableId == id).toList();
+  return stableMatches.length == 1 ? stableMatches.single : null;
+}
+
+int compareDownloadEpisodeOrder(DownloadEpisode a, DownloadEpisode b) {
+  final aOrdinal = a.ordinal;
+  final bOrdinal = b.ordinal;
+  if (aOrdinal != null && bOrdinal != null) {
+    final compare = aOrdinal.compareTo(bOrdinal);
+    if (compare != 0) {
+      return compare;
     }
+  } else if (aOrdinal != null) {
+    return -1;
+  } else if (bOrdinal != null) {
+    return 1;
   }
-  return null;
+  final nameCompare = a.episodeName.compareTo(b.episodeName);
+  if (nameCompare != 0) {
+    return nameCompare;
+  }
+  return a.stableId.compareTo(b.stableId);
+}
+
+String downloadEpisodeDisplayName(
+  DownloadEpisode episode, {
+  int? fallbackKey,
+}) {
+  if (episode.episodeName.isNotEmpty) {
+    return episode.episodeName;
+  }
+  final ordinal = episode.ordinal;
+  if (ordinal != null && ordinal > 0) {
+    return '第$ordinal集';
+  }
+  if (fallbackKey != null) {
+    return '下载项$fallbackKey';
+  }
+  return '未命名剧集';
+}
+
+bool _sameRoadIdentity(DownloadEpisode episode, int road, String roadId) {
+  final id = roadId.trim();
+  if (id.isNotEmpty) {
+    return episode.roadId == id;
+  }
+  return episode.road == road;
 }
 
 @HiveType(typeId: 8)
 class DownloadEpisode {
+  /// 订阅规则产出的集序数，仅用于排序、展示和弹幕集号；不参与身份匹配。
   @HiveField(0)
-  int episodeNumber;
+  int? ordinal;
 
   @HiveField(1)
   String episodeName;
@@ -201,8 +246,12 @@ class DownloadEpisode {
   @HiveField(16, defaultValue: '')
   String stableId;
 
+  /// 订阅规则产出的稳定线路身份；用于下载查重与在线/离线身份互通。
+  @HiveField(17, defaultValue: '')
+  String roadId;
+
   DownloadEpisode(
-    this.episodeNumber,
+    this.ordinal,
     this.episodeName,
     this.road,
     this.status,
@@ -219,6 +268,7 @@ class DownloadEpisode {
     this.danmakuData = '',
     this.danDanBangumiID = 0,
     this.stableId = '',
+    this.roadId = '',
   });
 }
 

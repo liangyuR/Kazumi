@@ -20,6 +20,7 @@ abstract class _PlayerSyncPlayController with Store {
     required this.bangumiId,
     required this.currentEpisode,
     required this.currentEpisodeStableId,
+    required this.currentEpisodeRoadId,
     required this.currentRoad,
     required this.playing,
     required this.currentPosition,
@@ -33,6 +34,7 @@ abstract class _PlayerSyncPlayController with Store {
   final int Function() bangumiId;
   final int Function() currentEpisode;
   final String Function() currentEpisodeStableId;
+  final String Function() currentEpisodeRoadId;
   final int Function() currentRoad;
   final bool Function() playing;
   final Duration Function() currentPosition;
@@ -73,7 +75,8 @@ abstract class _PlayerSyncPlayController with Store {
       String username,
       Future<void> Function(int episode, {int currentRoad, int offset})
           changeEpisode,
-      Future<void> Function(String stableId, {int currentRoad, int offset})
+      Future<void> Function(String stableId,
+              {int currentRoad, String roadId, int offset})
           changeEpisodeByStableId,
       {bool enableTLS = true}) async {
     await syncplayController?.disconnect();
@@ -164,6 +167,7 @@ abstract class _PlayerSyncPlayController with Store {
             final targetRoad = identity.road ?? currentRoad();
             if (!identity.targetsStableEpisode(
               currentStableId: currentEpisodeStableId(),
+              currentRoadId: currentEpisodeRoadId(),
               currentRoad: currentRoad(),
             )) {
               KazumiDialog.showToast(
@@ -172,6 +176,7 @@ abstract class _PlayerSyncPlayController with Store {
               changeEpisodeByStableId(
                 identity.stableId,
                 currentRoad: targetRoad,
+                roadId: identity.roadId ?? '',
               );
             }
             return;
@@ -278,6 +283,7 @@ abstract class _PlayerSyncPlayController with Store {
       road: currentRoad(),
       episode: currentEpisode(),
       stableId: currentEpisodeStableId(),
+      roadId: currentEpisodeRoadId(),
     );
   }
 

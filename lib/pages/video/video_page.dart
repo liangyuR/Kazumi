@@ -183,14 +183,6 @@ class _VideoPageState extends State<VideoPage>
     videoPageController.historyOffset = 0;
     _showTabBodyImmediately(locateEpisode: false);
 
-    // 同步迁移存量历史身份，保证下面 lastWatching 读取到 stableId 后再定位。
-    videoPageController.migrateStaleOnlineEpisodeIdentity();
-    unawaited(downloadController.migrateEpisodeStableIds(
-      bangumiId: videoPageController.bangumiItem.id,
-      pluginName: videoPageController.currentPlugin.name,
-      roadList: videoPageController.roadList,
-    ));
-
     var progress = historyController.lastWatching(
         videoPageController.bangumiItem,
         videoPageController.currentPlugin.name);
@@ -198,8 +190,8 @@ class _VideoPageState extends State<VideoPage>
       final selection = findEpisodeSelectionForHistoryProgress(
         videoPageController.roadList,
         stableId: progress.stableId,
-        episode: progress.episode,
-        road: progress.road,
+        roadId: progress.roadId,
+        preferredRoad: progress.road,
       );
       if (selection != null) {
         videoPageController.resetEpisodeState(
@@ -996,10 +988,13 @@ class _VideoPageState extends State<VideoPage>
   }
 
   DownloadEpisode? _getEpisodeFromRecords(
-    int episodeNumber,
     String stableId,
+    String roadId,
     int road,
   ) {
+    if (stableId.isEmpty) {
+      return null;
+    }
     final bangumiId = videoPageController.bangumiItem.id;
     final pluginName = videoPageController.currentPlugin.name;
 
@@ -1007,16 +1002,13 @@ class _VideoPageState extends State<VideoPage>
       if (record.bangumiId == bangumiId && record.pluginName == pluginName) {
         if (stableId.isNotEmpty) {
           for (final episode in record.episodes.values) {
-            if (episode.stableId == stableId && episode.road == road) {
+            if (episode.stableId == stableId &&
+                ((roadId.isNotEmpty && episode.roadId == roadId) ||
+                    (roadId.isEmpty && episode.road == road))) {
               return episode;
             }
           }
           return null;
-        }
-        for (final episode in record.episodes.values) {
-          if (episode.episodeNumber == episodeNumber && episode.road == road) {
-            return episode;
-          }
         }
         return null;
       }
@@ -1024,11 +1016,10 @@ class _VideoPageState extends State<VideoPage>
     return null;
   }
 
-  Widget _buildDownloadStatusIcon(
-      int episodeNumber, String stableId, int road) {
+  Widget _buildDownloadStatusIcon(String stableId, String roadId, int road) {
     // 离线模式下不显示下载状态图标
     if (videoPageController.isOfflineMode) return const SizedBox.shrink();
-    final episode = _getEpisodeFromRecords(episodeNumber, stableId, road);
+    final episode = _getEpisodeFromRecords(stableId, roadId, road);
     if (episode == null) return const SizedBox.shrink();
     switch (episode.status) {
       case DownloadStatus.completed:
@@ -1073,6 +1064,7 @@ class _VideoPageState extends State<VideoPage>
             int count0 = count;
             final urlItem = episodeItem.pageUrl;
             final stableId = episodeItem.stableId;
+            final roadId = episodeItem.roadId;
             final episodeName =
                 episodeItem.title.isNotEmpty ? episodeItem.title : '第$count0集';
             cardList.add(Container(
@@ -1133,8 +1125,8 @@ class _VideoPageState extends State<VideoPage>
                                           .onSurface),
                             )),
                             _buildDownloadStatusIcon(
-                              count0,
                               stableId,
+                              roadId,
                               visibleRoad,
                             ),
                             const SizedBox(width: 2),

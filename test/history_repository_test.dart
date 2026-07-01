@@ -33,13 +33,7 @@ void main() {
 
   group('HistoryRepository source metadata', () {
     test('keeps online source isolated from offline history', () async {
-      final repository = HistoryRepository(
-        historiesBox: historiesBox,
-        privateModeReader: () => privateMode,
-        progressSyncAppender: _noopHistorySync,
-        deleteSyncAppender: _noopDeleteSync,
-        clearSyncAppender: _noopClearSync,
-      );
+      final repository = _repository(historiesBox, () => privateMode);
       final item = _item(1);
 
       await repository.updateHistory(
@@ -51,6 +45,8 @@ void main() {
           road: 0,
           onlineBangumiSrc: 'https://example.com/source',
           episodePageUrl: '/online/1',
+          stableId: 'online-ep-1',
+          roadId: 'online-road',
         ),
         progress: const Duration(seconds: 10),
       );
@@ -63,6 +59,8 @@ void main() {
           episodeTitle: 'EP1 local',
           road: 0,
           episodePageUrl: '/offline/1',
+          stableId: 'offline-ep-1',
+          roadId: 'offline-road',
         ),
         progress: const Duration(seconds: 20),
       );
@@ -82,10 +80,14 @@ void main() {
       expect(offline, isNotNull);
       expect(online!.lastSrc, 'https://example.com/source');
       expect(online.episodePageUrl, '/online/1');
-      expect(online.progresses[1]!.progress.inSeconds, 10);
+      expect(online.stableId, 'online-ep-1');
+      expect(online.roadId, 'online-road');
+      expect(_progressByEpisode(online, 1).progress.inSeconds, 10);
       expect(offline!.lastSrc, isEmpty);
       expect(offline.episodePageUrl, '/offline/1');
-      expect(offline.progresses[1]!.progress.inSeconds, 20);
+      expect(offline.stableId, 'offline-ep-1');
+      expect(offline.roadId, 'offline-road');
+      expect(_progressByEpisode(offline, 1).progress.inSeconds, 20);
       expect(online.key, History.getKey('plugin', item));
       expect(
         offline.key,
@@ -99,13 +101,7 @@ void main() {
 
     test('does not overwrite existing online source with an empty value',
         () async {
-      final repository = HistoryRepository(
-        historiesBox: historiesBox,
-        privateModeReader: () => privateMode,
-        progressSyncAppender: _noopHistorySync,
-        deleteSyncAppender: _noopDeleteSync,
-        clearSyncAppender: _noopClearSync,
-      );
+      final repository = _repository(historiesBox, () => privateMode);
       final item = _item(2);
 
       await repository.updateHistory(
@@ -117,6 +113,8 @@ void main() {
           road: 0,
           onlineBangumiSrc: 'https://example.com/source',
           episodePageUrl: '/online/1',
+          stableId: 'ep-1',
+          roadId: 'road-a',
         ),
         progress: const Duration(seconds: 10),
       );
@@ -130,6 +128,8 @@ void main() {
           road: 1,
           onlineBangumiSrc: '',
           episodePageUrl: '/online/2',
+          stableId: 'ep-2',
+          roadId: 'road-b',
         ),
         progress: const Duration(seconds: 30),
       );
@@ -145,434 +145,42 @@ void main() {
       expect(history.lastWatchEpisode, 2);
       expect(history.lastWatchEpisodeName, 'EP2');
       expect(history.episodePageUrl, '/online/2');
-      expect(history.progresses[2]!.episodePageUrl, '/online/2');
-      expect(history.progresses[2]!.progress.inSeconds, 30);
-    });
-
-    test('finds progress by page url before the old episode index', () async {
-      final repository = HistoryRepository(
-        historiesBox: historiesBox,
-        privateModeReader: () => privateMode,
-        progressSyncAppender: _noopHistorySync,
-        deleteSyncAppender: _noopDeleteSync,
-        clearSyncAppender: _noopClearSync,
-      );
-      final item = _item(4);
-      final history = History(
-        item,
-        2,
-        'plugin',
-        DateTime.fromMillisecondsSinceEpoch(1000),
-        'https://example.com/source',
-        'EP2',
-        episodePageUrl: '/online/2',
-      );
-      history.progresses[1] = Progress(
-        1,
-        0,
-        10 * 1000,
-        episodePageUrl: '/online/1',
-      );
-      history.progresses[2] = Progress(
-        2,
-        0,
-        20 * 1000,
-        episodePageUrl: '/online/2',
-      );
-      await historiesBox.put(history.key, history);
-
-      final progress = repository.findProgress(
-        item,
-        'plugin',
-        1,
-        episodePageUrl: '/online/2',
-      );
-
-      expect(progress, isNotNull);
-      expect(progress!.progress.inSeconds, 20);
-      expect(progress.episodePageUrl, '/online/2');
-    });
-
-    test('falls back to legacy int progress and backfills page url', () async {
-      final repository = HistoryRepository(
-        historiesBox: historiesBox,
-        privateModeReader: () => privateMode,
-        progressSyncAppender: _noopHistorySync,
-        deleteSyncAppender: _noopDeleteSync,
-        clearSyncAppender: _noopClearSync,
-      );
-      final item = _item(5);
-      final history = History(
-        item,
-        1,
-        'plugin',
-        DateTime.fromMillisecondsSinceEpoch(1000),
-        'https://example.com/source',
-        'EP1',
-        episodePageUrl: '/online/1',
-      );
-      history.progresses[1] = Progress(1, 0, 10 * 1000);
-      await historiesBox.put(history.key, history);
-
-      final progress = repository.findProgress(
-        item,
-        'plugin',
-        1,
-        episodePageUrl: '/online/1',
-      );
-
-      expect(progress, isNotNull);
-      expect(progress!.progress.inSeconds, 10);
-      expect(progress.episodePageUrl, '/online/1');
-      expect(historiesBox.get(history.key)!.progresses[1]!.episodePageUrl,
-          '/online/1');
-    });
-
-    test('does not overwrite an existing different page url bucket', () async {
-      final repository = HistoryRepository(
-        historiesBox: historiesBox,
-        privateModeReader: () => privateMode,
-        progressSyncAppender: _noopHistorySync,
-        deleteSyncAppender: _noopDeleteSync,
-        clearSyncAppender: _noopClearSync,
-      );
-      final item = _item(6);
-
-      await repository.updateHistory(
-        identity: PlaybackHistoryIdentity.online(
-          bangumiItem: item,
-          pluginName: 'plugin',
-          episodeNumber: 1,
-          episodeTitle: 'EP1',
-          road: 0,
-          onlineBangumiSrc: 'https://example.com/source',
-          episodePageUrl: '/online/a',
-        ),
-        progress: const Duration(seconds: 10),
-      );
-      await repository.updateHistory(
-        identity: PlaybackHistoryIdentity.online(
-          bangumiItem: item,
-          pluginName: 'plugin',
-          episodeNumber: 1,
-          episodeTitle: 'EP1 new',
-          road: 0,
-          onlineBangumiSrc: 'https://example.com/source',
-          episodePageUrl: '/online/b',
-        ),
-        progress: const Duration(seconds: 20),
-      );
-
-      final history = repository.getHistory('plugin', item)!;
-      expect(history.progresses, hasLength(2));
-      expect(
-        history.progresses.values
-            .singleWhere(
-              (progress) => progress.episodePageUrl == '/online/a',
-            )
-            .progress
-            .inSeconds,
-        10,
-      );
-      expect(
-        history.progresses.values
-            .singleWhere(
-              (progress) => progress.episodePageUrl == '/online/b',
-            )
-            .progress
-            .inSeconds,
-        20,
-      );
-    });
-
-    test('clears the progress matched by page url', () async {
-      final repository = HistoryRepository(
-        historiesBox: historiesBox,
-        privateModeReader: () => privateMode,
-        progressSyncAppender: _noopHistorySync,
-        deleteSyncAppender: _noopDeleteSync,
-        clearSyncAppender: _noopClearSync,
-      );
-      final item = _item(7);
-
-      await repository.updateHistory(
-        identity: PlaybackHistoryIdentity.online(
-          bangumiItem: item,
-          pluginName: 'plugin',
-          episodeNumber: 1,
-          episodeTitle: 'EP1',
-          road: 0,
-          onlineBangumiSrc: 'https://example.com/source',
-          episodePageUrl: '/online/a',
-        ),
-        progress: const Duration(seconds: 10),
-      );
-      await repository.updateHistory(
-        identity: PlaybackHistoryIdentity.online(
-          bangumiItem: item,
-          pluginName: 'plugin',
-          episodeNumber: 1,
-          episodeTitle: 'EP1 new',
-          road: 0,
-          onlineBangumiSrc: 'https://example.com/source',
-          episodePageUrl: '/online/b',
-        ),
-        progress: const Duration(seconds: 20),
-      );
-
-      await repository.clearProgress(
-        item,
-        'plugin',
-        1,
-        episodePageUrl: '/online/b',
-      );
-
-      final history = repository.getHistory('plugin', item)!;
-      expect(
-        history.progresses.values
-            .singleWhere(
-              (progress) => progress.episodePageUrl == '/online/a',
-            )
-            .progress
-            .inSeconds,
-        10,
-      );
-      expect(
-        history.progresses.values
-            .singleWhere(
-              (progress) => progress.episodePageUrl == '/online/b',
-            )
-            .progress,
-        Duration.zero,
-      );
-    });
-
-    test('empty page url ignores synthetic buckets for other episodes',
-        () async {
-      final repository = HistoryRepository(
-        historiesBox: historiesBox,
-        privateModeReader: () => privateMode,
-        progressSyncAppender: _noopHistorySync,
-        deleteSyncAppender: _noopDeleteSync,
-        clearSyncAppender: _noopClearSync,
-      );
-      final item = _item(8);
-
-      await repository.updateHistory(
-        identity: PlaybackHistoryIdentity.online(
-          bangumiItem: item,
-          pluginName: 'plugin',
-          episodeNumber: 1,
-          episodeTitle: 'EP1',
-          road: 0,
-          onlineBangumiSrc: 'https://example.com/source',
-          episodePageUrl: '/online/a',
-        ),
-        progress: const Duration(seconds: 10),
-      );
-      await repository.updateHistory(
-        identity: PlaybackHistoryIdentity.online(
-          bangumiItem: item,
-          pluginName: 'plugin',
-          episodeNumber: 1,
-          episodeTitle: 'EP1 alt',
-          road: 0,
-          onlineBangumiSrc: 'https://example.com/source',
-          episodePageUrl: '/online/b',
-        ),
-        progress: const Duration(seconds: 20),
-      );
-
-      expect(repository.findProgress(item, 'plugin', 2), isNull);
-
-      await repository.updateHistory(
-        identity: PlaybackHistoryIdentity.online(
-          bangumiItem: item,
-          pluginName: 'plugin',
-          episodeNumber: 2,
-          episodeTitle: 'EP2',
-          road: 0,
-          onlineBangumiSrc: 'https://example.com/source',
-          episodePageUrl: '',
-        ),
-        progress: const Duration(seconds: 30),
-      );
-
-      var history = repository.getHistory('plugin', item)!;
-      final urlProgress = history.progresses.values.singleWhere(
-        (progress) => progress.episodePageUrl == '/online/b',
-      );
-      final noUrlProgress = repository.findProgress(item, 'plugin', 2);
-
-      expect(urlProgress.episode, 1);
-      expect(urlProgress.progress.inSeconds, 20);
-      expect(noUrlProgress, isNotNull);
-      expect(noUrlProgress!.episode, 2);
-      expect(noUrlProgress.episodePageUrl, isEmpty);
-      expect(noUrlProgress.progress.inSeconds, 30);
-
-      await repository.clearProgress(item, 'plugin', 2);
-
-      history = repository.getHistory('plugin', item)!;
-      expect(
-        history.progresses.values
-            .singleWhere(
-              (progress) => progress.episodePageUrl == '/online/b',
-            )
-            .progress
-            .inSeconds,
-        20,
-      );
-      expect(
-          repository.findProgress(item, 'plugin', 2)!.progress, Duration.zero);
-    });
-
-    test('backfills synthetic legacy progress when page url appears later',
-        () async {
-      final repository = HistoryRepository(
-        historiesBox: historiesBox,
-        privateModeReader: () => privateMode,
-        progressSyncAppender: _noopHistorySync,
-        deleteSyncAppender: _noopDeleteSync,
-        clearSyncAppender: _noopClearSync,
-      );
-      final item = _item(9);
-
-      await repository.updateHistory(
-        identity: PlaybackHistoryIdentity.online(
-          bangumiItem: item,
-          pluginName: 'plugin',
-          episodeNumber: 1,
-          episodeTitle: 'EP1',
-          road: 0,
-          onlineBangumiSrc: 'https://example.com/source',
-          episodePageUrl: '/online/a',
-        ),
-        progress: const Duration(seconds: 10),
-      );
-      await repository.updateHistory(
-        identity: PlaybackHistoryIdentity.online(
-          bangumiItem: item,
-          pluginName: 'plugin',
-          episodeNumber: 1,
-          episodeTitle: 'EP1 alt',
-          road: 0,
-          onlineBangumiSrc: 'https://example.com/source',
-          episodePageUrl: '/online/b',
-        ),
-        progress: const Duration(seconds: 20),
-      );
-      await repository.updateHistory(
-        identity: PlaybackHistoryIdentity.online(
-          bangumiItem: item,
-          pluginName: 'plugin',
-          episodeNumber: 2,
-          episodeTitle: 'EP2',
-          road: 0,
-          onlineBangumiSrc: 'https://example.com/source',
-          episodePageUrl: '',
-        ),
-        progress: const Duration(seconds: 30),
-      );
-
-      var history = repository.getHistory('plugin', item)!;
-      expect(history.progresses, hasLength(3));
-      expect(history.progresses[2]!.episode, 1);
-      expect(history.progresses[2]!.episodePageUrl, '/online/b');
-      expect(history.progresses[3]!.episode, 2);
-      expect(history.progresses[3]!.episodePageUrl, isEmpty);
-
-      final resumed = repository.findProgress(
-        item,
-        'plugin',
-        2,
-        episodePageUrl: '/online/2',
-      );
-      expect(resumed, isNotNull);
-      expect(resumed!.episode, 2);
-      expect(resumed.progress.inSeconds, 30);
-      expect(resumed.episodePageUrl, '/online/2');
-
-      await repository.updateHistory(
-        identity: PlaybackHistoryIdentity.online(
-          bangumiItem: item,
-          pluginName: 'plugin',
-          episodeNumber: 2,
-          episodeTitle: 'EP2',
-          road: 0,
-          onlineBangumiSrc: 'https://example.com/source',
-          episodePageUrl: '/online/2',
-        ),
-        progress: const Duration(seconds: 40),
-      );
-
-      history = repository.getHistory('plugin', item)!;
-      expect(history.progresses, hasLength(3));
-      expect(history.progresses[2]!.episode, 1);
-      expect(history.progresses[2]!.episodePageUrl, '/online/b');
-      expect(history.progresses[3]!.episode, 2);
-      expect(history.progresses[3]!.episodePageUrl, '/online/2');
-      expect(history.progresses[3]!.progress.inSeconds, 40);
-    });
-
-    test(
-        'last watching falls back to episode when latest watch has no page url',
-        () async {
-      final repository = HistoryRepository(
-        historiesBox: historiesBox,
-        privateModeReader: () => privateMode,
-        progressSyncAppender: _noopHistorySync,
-        deleteSyncAppender: _noopDeleteSync,
-        clearSyncAppender: _noopClearSync,
-      );
-      final item = _item(10);
-
-      await repository.updateHistory(
-        identity: PlaybackHistoryIdentity.online(
-          bangumiItem: item,
-          pluginName: 'plugin',
-          episodeNumber: 1,
-          episodeTitle: 'EP1',
-          road: 0,
-          onlineBangumiSrc: 'https://example.com/source',
-          episodePageUrl: '/online/a',
-        ),
-        progress: const Duration(seconds: 10),
-      );
-      await repository.updateHistory(
-        identity: PlaybackHistoryIdentity.online(
-          bangumiItem: item,
-          pluginName: 'plugin',
-          episodeNumber: 2,
-          episodeTitle: 'EP2',
-          road: 0,
-          onlineBangumiSrc: 'https://example.com/source',
-          episodePageUrl: '',
-        ),
-        progress: const Duration(seconds: 20),
-      );
-
-      final history = repository.getHistory('plugin', item)!;
-      final progress = repository.getLastWatchingProgress(item, 'plugin');
-
-      expect(history.lastWatchEpisode, 2);
-      expect(history.episodePageUrl, isEmpty);
-      expect(progress, isNotNull);
-      expect(progress!.episode, 2);
-      expect(progress.episodePageUrl, isEmpty);
-      expect(progress.progress.inSeconds, 20);
+      expect(history.stableId, 'ep-2');
+      expect(history.roadId, 'road-b');
+      final episode2Progress = _progressByEpisode(history, 2);
+      expect(episode2Progress.episodePageUrl, '/online/2');
+      expect(episode2Progress.stableId, 'ep-2');
+      expect(episode2Progress.roadId, 'road-b');
+      expect(episode2Progress.progress.inSeconds, 30);
     });
 
     test('does not record history when private mode is enabled', () async {
       privateMode = true;
-      final repository = HistoryRepository(
-        historiesBox: historiesBox,
-        privateModeReader: () => privateMode,
-        progressSyncAppender: _noopHistorySync,
-        deleteSyncAppender: _noopDeleteSync,
-        clearSyncAppender: _noopClearSync,
-      );
+      final repository = _repository(historiesBox, () => privateMode);
       final item = _item(3);
+
+      await repository.updateHistory(
+        identity: PlaybackHistoryIdentity.online(
+          bangumiItem: item,
+          pluginName: 'plugin',
+          episodeNumber: 1,
+          episodeTitle: 'EP1',
+          road: 0,
+          onlineBangumiSrc: 'https://example.com/source',
+          episodePageUrl: '/online/1',
+          stableId: 'ep-1',
+          roadId: 'road-a',
+        ),
+        progress: const Duration(seconds: 10),
+      );
+
+      expect(historiesBox.values, isEmpty);
+      expect(repository.getHistory('plugin', item), isNull);
+    });
+
+    test('does not record history without stable episode identity', () async {
+      final repository = _repository(historiesBox, () => privateMode);
+      final item = _item(4);
 
       await repository.updateHistory(
         identity: PlaybackHistoryIdentity.online(
@@ -592,17 +200,9 @@ void main() {
     });
   });
 
-  group('HistoryRepository stableId matching', () {
-    HistoryRepository buildRepository() => HistoryRepository(
-          historiesBox: historiesBox,
-          privateModeReader: () => privateMode,
-          progressSyncAppender: _noopHistorySync,
-          deleteSyncAppender: _noopDeleteSync,
-          clearSyncAppender: _noopClearSync,
-        );
-
-    test('reuses the same bucket after a domain change via stableId', () async {
-      final repository = buildRepository();
+  group('HistoryRepository stable identity matching', () {
+    test('reuses the same bucket after a domain change', () async {
+      final repository = _repository(historiesBox, () => privateMode);
       final item = _item(30);
 
       await repository.updateHistory(
@@ -614,12 +214,12 @@ void main() {
           road: 0,
           onlineBangumiSrc: 'https://example.com/source',
           episodePageUrl: 'https://old.example.com/play/1',
-          stableId: '/play/1',
+          stableId: 'episode-1',
+          roadId: 'road-main',
         ),
         progress: const Duration(seconds: 10),
       );
 
-      // 源站换域名：episodePageUrl 完全不同，但 stableId 不变，应复用同一桶。
       await repository.updateHistory(
         identity: PlaybackHistoryIdentity.online(
           bangumiItem: item,
@@ -629,22 +229,25 @@ void main() {
           road: 0,
           onlineBangumiSrc: 'https://example.com/source',
           episodePageUrl: 'https://new-mirror.example.org/play/1',
-          stableId: '/play/1',
+          stableId: 'episode-1',
+          roadId: 'road-main',
         ),
         progress: const Duration(seconds: 42),
       );
 
       final history = repository.getHistory('plugin', item)!;
       expect(history.progresses, hasLength(1));
-      expect(history.stableId, '/play/1');
+      expect(history.stableId, 'episode-1');
+      expect(history.roadId, 'road-main');
       final progress = history.progresses.values.single;
       expect(progress.progress.inSeconds, 42);
-      expect(progress.stableId, '/play/1');
+      expect(progress.stableId, 'episode-1');
+      expect(progress.roadId, 'road-main');
       expect(progress.episodePageUrl, 'https://new-mirror.example.org/play/1');
     });
 
-    test('findProgress matches by stableId ignoring page url drift', () async {
-      final repository = buildRepository();
+    test('findProgress matches by stableId and roadId', () async {
+      final repository = _repository(historiesBox, () => privateMode);
       final item = _item(31);
 
       await repository.updateHistory(
@@ -656,7 +259,8 @@ void main() {
           road: 0,
           onlineBangumiSrc: 'https://example.com/source',
           episodePageUrl: 'https://old.example.com/play/1',
-          stableId: '/play/1',
+          stableId: 'episode-1',
+          roadId: 'road-main',
         ),
         progress: const Duration(seconds: 15),
       );
@@ -665,16 +269,17 @@ void main() {
         item,
         'plugin',
         1,
-        episodePageUrl: 'https://new.example.com/play/1',
-        stableId: '/play/1',
+        stableId: 'episode-1',
+        roadId: 'road-main',
       );
 
       expect(progress, isNotNull);
       expect(progress!.progress.inSeconds, 15);
     });
 
-    test('getLastWatchingProgress matches by top-level stableId', () async {
-      final repository = buildRepository();
+    test('getLastWatchingProgress matches by top-level stable identity',
+        () async {
+      final repository = _repository(historiesBox, () => privateMode);
       final item = _item(34);
 
       final history = History(
@@ -685,14 +290,21 @@ void main() {
         'https://example.com/source',
         'EP1',
         episodePageUrl: 'https://old.example.com/play/1',
-        stableId: '/play/1',
+        stableId: 'episode-1',
+        roadId: 'road-main',
       );
-      history.progresses[3] = Progress(
+      history.progresses[historyProgressKey(
+        stableId: 'episode-1',
+        episode: 1,
+        road: 0,
+        roadId: 'road-main',
+      )] = Progress(
         1,
         0,
         25 * 1000,
         episodePageUrl: 'https://new.example.com/play/1',
-        stableId: '/play/1',
+        stableId: 'episode-1',
+        roadId: 'road-main',
       );
       await historiesBox.put(history.key, history);
 
@@ -700,12 +312,13 @@ void main() {
 
       expect(progress, isNotNull);
       expect(progress!.progress.inSeconds, 25);
-      expect(progress.stableId, '/play/1');
+      expect(progress.stableId, 'episode-1');
+      expect(progress.roadId, 'road-main');
     });
 
     test('keeps different stableIds separate even when page url matches',
         () async {
-      final repository = buildRepository();
+      final repository = _repository(historiesBox, () => privateMode);
       final item = _item(33);
 
       await repository.updateHistory(
@@ -718,6 +331,7 @@ void main() {
           onlineBangumiSrc: 'https://example.com/source',
           episodePageUrl: 'https://example.com/shared',
           stableId: 'source-a',
+          roadId: 'road-main',
         ),
         progress: const Duration(seconds: 10),
       );
@@ -731,6 +345,7 @@ void main() {
           onlineBangumiSrc: 'https://example.com/source',
           episodePageUrl: 'https://example.com/shared',
           stableId: 'source-b',
+          roadId: 'road-main',
         ),
         progress: const Duration(seconds: 20),
       );
@@ -754,8 +369,8 @@ void main() {
       );
     });
 
-    test('keeps the same stableId separate by road', () async {
-      final repository = buildRepository();
+    test('keeps the same stableId separate by roadId', () async {
+      final repository = _repository(historiesBox, () => privateMode);
       final item = _item(35);
 
       await repository.updateHistory(
@@ -768,6 +383,7 @@ void main() {
           onlineBangumiSrc: 'https://example.com/source',
           episodePageUrl: 'https://example.com/road-0/play/1',
           stableId: 'shared-episode',
+          roadId: 'source-a',
         ),
         progress: const Duration(seconds: 10),
       );
@@ -781,211 +397,88 @@ void main() {
           onlineBangumiSrc: 'https://example.com/source',
           episodePageUrl: 'https://example.com/road-1/play/1',
           stableId: 'shared-episode',
+          roadId: 'source-b',
         ),
         progress: const Duration(seconds: 20),
       );
 
       final history = repository.getHistory('plugin', item)!;
       expect(history.progresses, hasLength(2));
-      expect(
-        history.progresses.values
-            .singleWhere((progress) => progress.road == 0)
-            .progress
-            .inSeconds,
-        10,
-      );
-      expect(
-        history.progresses.values
-            .singleWhere((progress) => progress.road == 1)
-            .progress
-            .inSeconds,
-        20,
-      );
 
-      final road0Progress = repository.findProgress(
+      final roadAProgress = repository.findProgress(
         item,
         'plugin',
         1,
-        road: 0,
         stableId: 'shared-episode',
+        roadId: 'source-a',
       );
-      final road1Progress = repository.findProgress(
+      final roadBProgress = repository.findProgress(
         item,
         'plugin',
         1,
-        road: 1,
         stableId: 'shared-episode',
+        roadId: 'source-b',
       );
-      expect(road0Progress!.progress.inSeconds, 10);
-      expect(road1Progress!.progress.inSeconds, 20);
+      expect(roadAProgress!.progress.inSeconds, 10);
+      expect(roadBProgress!.progress.inSeconds, 20);
 
       await repository.clearProgress(
         item,
         'plugin',
         1,
-        road: 1,
         stableId: 'shared-episode',
+        roadId: 'source-b',
       );
 
       final refreshed = repository.getHistory('plugin', item)!;
       expect(
         refreshed.progresses.values
-            .singleWhere((progress) => progress.road == 0)
+            .singleWhere((progress) => progress.roadId == 'source-a')
             .progress
             .inSeconds,
         10,
       );
       expect(
         refreshed.progresses.values
-            .singleWhere((progress) => progress.road == 1)
+            .singleWhere((progress) => progress.roadId == 'source-b')
             .progress,
         Duration.zero,
       );
     });
 
-    test('backfills stableId onto a legacy progress matched by page url',
-        () async {
-      final repository = buildRepository();
-      final item = _item(32);
+    test('does not fall back to page url when stableId differs', () async {
+      final repository = _repository(historiesBox, () => privateMode);
+      final item = _item(36);
 
-      final history = History(
-        item,
-        1,
-        'plugin',
-        DateTime.fromMillisecondsSinceEpoch(1000),
-        'https://example.com/source',
-        'EP1',
-        episodePageUrl: 'https://old.example.com/play/1',
+      await repository.updateHistory(
+        identity: PlaybackHistoryIdentity.online(
+          bangumiItem: item,
+          pluginName: 'plugin',
+          episodeNumber: 1,
+          episodeTitle: 'EP1',
+          road: 0,
+          onlineBangumiSrc: 'https://example.com/source',
+          episodePageUrl: 'https://example.com/shared',
+          stableId: 'episode-old',
+          roadId: 'road-main',
+        ),
+        progress: const Duration(seconds: 10),
       );
-      history.progresses[1] = Progress(
-        1,
-        0,
-        10 * 1000,
-        episodePageUrl: 'https://old.example.com/play/1',
-      );
-      await historiesBox.put(history.key, history);
 
       final progress = repository.findProgress(
         item,
         'plugin',
         1,
-        episodePageUrl: 'https://old.example.com/play/1',
-        stableId: '/play/1',
+        stableId: 'episode-new',
+        roadId: 'road-main',
       );
 
-      expect(progress, isNotNull);
-      expect(progress!.progress.inSeconds, 10);
-      expect(
-        historiesBox.get(history.key)!.progresses[1]!.stableId,
-        '/play/1',
-      );
-    });
-  });
-
-  group('HistoryRepository migrateProgressPageUrls', () {
-    HistoryRepository buildRepository() => HistoryRepository(
-          historiesBox: historiesBox,
-          privateModeReader: () => privateMode,
-          progressSyncAppender: _noopHistorySync,
-          deleteSyncAppender: _noopDeleteSync,
-          clearSyncAppender: _noopClearSync,
-        );
-
-    test('rewrites stale page url in place and reuses bucket on next update',
-        () async {
-      final repository = buildRepository();
-      final item = _item(20);
-
-      await repository.updateHistory(
-        identity: PlaybackHistoryIdentity.online(
-          bangumiItem: item,
-          pluginName: 'plugin',
-          episodeNumber: 1,
-          episodeTitle: 'EP1',
-          road: 0,
-          onlineBangumiSrc: 'https://example.com/source',
-          episodePageUrl: 'https://old.example.com/play/1',
-        ),
-        progress: const Duration(seconds: 10),
-      );
-
-      repository.migrateProgressPageUrls(
-        adapterName: 'plugin',
-        bangumiItem: item,
-        resolveCurrentPageUrl: (road, episode) =>
-            road == 0 && episode == 1 ? 'https://new.example.com/play/1' : '',
-      );
-
-      var history = repository.getHistory('plugin', item)!;
-      expect(history.progresses, hasLength(1));
-      expect(
-        history.progresses[1]!.episodePageUrl,
-        'https://new.example.com/play/1',
-      );
-
-      // 后续以新 URL 写入应复用既有桶，而非新建重复条目。
-      await repository.updateHistory(
-        identity: PlaybackHistoryIdentity.online(
-          bangumiItem: item,
-          pluginName: 'plugin',
-          episodeNumber: 1,
-          episodeTitle: 'EP1',
-          road: 0,
-          onlineBangumiSrc: 'https://example.com/source',
-          episodePageUrl: 'https://new.example.com/play/1',
-        ),
-        progress: const Duration(seconds: 30),
-      );
-
-      history = repository.getHistory('plugin', item)!;
-      expect(history.progresses, hasLength(1));
-      expect(history.progresses[1]!.progress.inSeconds, 30);
-      expect(
-        history.progresses[1]!.episodePageUrl,
-        'https://new.example.com/play/1',
-      );
+      expect(progress, isNull);
     });
 
-    test(
-        'migrates top-level history.episodePageUrl and keeps lastWatching match',
-        () async {
-      final repository = buildRepository();
-      final item = _item(21);
-
-      await repository.updateHistory(
-        identity: PlaybackHistoryIdentity.online(
-          bangumiItem: item,
-          pluginName: 'plugin',
-          episodeNumber: 1,
-          episodeTitle: 'EP1',
-          road: 0,
-          onlineBangumiSrc: 'https://example.com/source',
-          episodePageUrl: 'https://old.example.com/play/1',
-        ),
-        progress: const Duration(seconds: 10),
-      );
-
-      repository.migrateProgressPageUrls(
-        adapterName: 'plugin',
-        bangumiItem: item,
-        resolveCurrentPageUrl: (road, episode) =>
-            'https://new.example.com/play/$episode',
-      );
-
-      final history = repository.getHistory('plugin', item)!;
-      expect(history.episodePageUrl, 'https://new.example.com/play/1');
-
-      final resumed = repository.getLastWatchingProgress(item, 'plugin');
-      expect(resumed, isNotNull);
-      expect(resumed!.episode, 1);
-      expect(resumed.episodePageUrl, 'https://new.example.com/play/1');
-      expect(resumed.progress.inSeconds, 10);
-    });
-
-    test('backfills stableId from current episode identity without url rewrite',
-        () async {
-      final repository = buildRepository();
-      final item = _item(25);
+    test('does not fall back to road index when roadId differs', () async {
+      final repository = _repository(historiesBox, () => privateMode);
+      final item = _item(37);
 
       await repository.updateHistory(
         identity: PlaybackHistoryIdentity.online(
@@ -996,169 +489,37 @@ void main() {
           road: 0,
           onlineBangumiSrc: 'https://example.com/source',
           episodePageUrl: 'https://example.com/play/1',
+          stableId: 'episode-1',
+          roadId: 'road-a',
         ),
         progress: const Duration(seconds: 10),
       );
 
-      repository.migrateProgressPageUrls(
-        adapterName: 'plugin',
-        bangumiItem: item,
-        resolveCurrentPageUrl: (road, episode) =>
-            'https://example.com/play/$episode',
-        resolveCurrentStableId: (road, episode) =>
-            road == 0 && episode == 1 ? '/play/1' : '',
-      );
-
-      final history = repository.getHistory('plugin', item)!;
-      expect(history.stableId, '/play/1');
-      expect(history.progresses[1]!.stableId, '/play/1');
-
-      final resumed = repository.getLastWatchingProgress(item, 'plugin');
-      expect(resumed, isNotNull);
-      expect(resumed!.stableId, '/play/1');
-      expect(resumed.progress.inSeconds, 10);
-    });
-
-    test('uses progress road/episode not the bucket key for synthetic buckets',
-        () async {
-      final repository = buildRepository();
-      final item = _item(22);
-
-      // 模拟 bucketForNewProgress 递增产生的 synthetic bucket：
-      // map key (3) 不等于 Progress.episode (1)。
-      final history = History(
+      final progress = repository.findProgress(
         item,
-        1,
         'plugin',
-        DateTime.now(),
-        'https://example.com/source',
-        'EP1',
-        entryKind: HistoryEntryKind.online,
-        episodePageUrl: 'https://old.example.com/play/1',
-      );
-      history.progresses[3] = Progress(
         1,
-        0,
-        10000,
-        updatedAtMs: DateTime.now().millisecondsSinceEpoch,
-        episodePageUrl: 'https://old.example.com/play/1',
-      );
-      await historiesBox.put(history.key, history);
-
-      final resolverCalls = <String>[];
-      repository.migrateProgressPageUrls(
-        adapterName: 'plugin',
-        bangumiItem: item,
-        resolveCurrentPageUrl: (road, episode) {
-          resolverCalls.add('$road:$episode');
-          if (road == 0 && episode == 1) {
-            return 'https://new.example.com/play/1';
-          }
-          return '';
-        },
+        road: 0,
+        stableId: 'episode-1',
+        roadId: 'road-b',
       );
 
-      final stored = repository.getHistory('plugin', item)!;
-      expect(stored.progresses.containsKey(3), isTrue);
-      expect(stored.progresses[3]!.episode, 1);
-      expect(
-        stored.progresses[3]!.episodePageUrl,
-        'https://new.example.com/play/1',
-      );
-      // resolver 必须使用 Progress 值的 road/episode（1），而非 map key（3）。
-      expect(resolverCalls, contains('0:1'));
-      expect(resolverCalls, isNot(contains('0:3')));
-    });
-
-    test('collapses duplicate buckets keeping the newer progress', () async {
-      final repository = buildRepository();
-      final item = _item(23);
-
-      // 一个旧 URL 桶 + 一个过往升级已生成的新 URL 桶，迁移后应合并为一个。
-      final history = History(
-        item,
-        1,
-        'plugin',
-        DateTime.now(),
-        'https://example.com/source',
-        'EP1',
-        entryKind: HistoryEntryKind.online,
-        episodePageUrl: 'https://new.example.com/play/1',
-      );
-      history.progresses[1] = Progress(
-        1,
-        0,
-        30000,
-        updatedAtMs: 2000,
-        episodePageUrl: 'https://old.example.com/play/1',
-      );
-      history.progresses[2] = Progress(
-        1,
-        0,
-        20000,
-        updatedAtMs: 1000,
-        episodePageUrl: 'https://new.example.com/play/1',
-      );
-      await historiesBox.put(history.key, history);
-
-      repository.migrateProgressPageUrls(
-        adapterName: 'plugin',
-        bangumiItem: item,
-        resolveCurrentPageUrl: (road, episode) =>
-            'https://new.example.com/play/1',
-      );
-
-      final stored = repository.getHistory('plugin', item)!;
-      expect(stored.progresses, hasLength(1));
-      final survivor = stored.progresses.values.single;
-      expect(survivor.episodePageUrl, 'https://new.example.com/play/1');
-      expect(survivor.progress.inSeconds, 30);
-    });
-
-    test('leaves entries untouched when resolver or stored url is empty',
-        () async {
-      final repository = buildRepository();
-      final item = _item(24);
-
-      await repository.updateHistory(
-        identity: PlaybackHistoryIdentity.online(
-          bangumiItem: item,
-          pluginName: 'plugin',
-          episodeNumber: 1,
-          episodeTitle: 'EP1',
-          road: 0,
-          onlineBangumiSrc: 'https://example.com/source',
-          episodePageUrl: 'https://old.example.com/play/1',
-        ),
-        progress: const Duration(seconds: 10),
-      );
-      await repository.updateHistory(
-        identity: PlaybackHistoryIdentity.online(
-          bangumiItem: item,
-          pluginName: 'plugin',
-          episodeNumber: 2,
-          episodeTitle: 'EP2',
-          road: 0,
-          onlineBangumiSrc: 'https://example.com/source',
-          episodePageUrl: '',
-        ),
-        progress: const Duration(seconds: 20),
-      );
-
-      repository.migrateProgressPageUrls(
-        adapterName: 'plugin',
-        bangumiItem: item,
-        resolveCurrentPageUrl: (road, episode) => '',
-      );
-
-      final history = repository.getHistory('plugin', item)!;
-      expect(
-        history.progresses[1]!.episodePageUrl,
-        'https://old.example.com/play/1',
-      );
-      expect(history.progresses[2]!.episodePageUrl, isEmpty);
+      expect(progress, isNull);
     });
   });
+}
+
+HistoryRepository _repository(
+  Box<History> historiesBox,
+  bool Function() privateModeReader,
+) {
+  return HistoryRepository(
+    historiesBox: historiesBox,
+    privateModeReader: privateModeReader,
+    progressSyncAppender: _noopHistorySync,
+    deleteSyncAppender: _noopDeleteSync,
+    clearSyncAppender: _noopClearSync,
+  );
 }
 
 Future<void> _noopHistorySync({
@@ -1169,11 +530,17 @@ Future<void> _noopHistorySync({
   required int updatedAt,
   required String episodePageUrl,
   required String stableId,
+  required String roadId,
 }) async {}
 
 Future<void> _noopDeleteSync(History history) async {}
 
 Future<void> _noopClearSync() async {}
+
+Progress _progressByEpisode(History history, int episode) {
+  return history.progresses.values
+      .singleWhere((progress) => progress.episode == episode);
+}
 
 void _registerAdapters() {
   if (!Hive.isAdapterRegistered(1)) {

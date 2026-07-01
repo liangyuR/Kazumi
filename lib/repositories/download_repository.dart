@@ -36,7 +36,7 @@ abstract class IDownloadRepository {
   /// 通过订阅规则产出的稳定集身份查找下载记录。
   DownloadEpisode? getEpisodeByStableId(
       int bangumiId, String pluginName, String stableId,
-      {required int road});
+      {required int road, String roadId = ''});
 }
 
 class DownloadRepository implements IDownloadRepository {
@@ -227,7 +227,7 @@ class DownloadRepository implements IDownloadRepository {
     return record.episodes.values
         .where((e) => e.status == DownloadStatus.completed)
         .toList()
-      ..sort((a, b) => a.episodeNumber.compareTo(b.episodeNumber));
+      ..sort(compareDownloadEpisodeOrder);
   }
 
   @override
@@ -236,12 +236,16 @@ class DownloadRepository implements IDownloadRepository {
     String pluginName,
     String stableId, {
     required int road,
+    String roadId = '',
   }) {
     if (stableId.isEmpty) return null;
     final record = getRecordByBangumiId(bangumiId, pluginName);
     if (record == null) return null;
+    final scopedRoadId = roadId.trim();
     for (final episode in record.episodes.values) {
-      if (episode.stableId == stableId && episode.road == road) {
+      if (episode.stableId == stableId &&
+          ((scopedRoadId.isNotEmpty && episode.roadId == scopedRoadId) ||
+              (scopedRoadId.isEmpty && episode.road == road))) {
         return episode;
       }
     }

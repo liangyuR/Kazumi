@@ -30,8 +30,10 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
   final TextEditingController searchResultController = TextEditingController();
   final TextEditingController chapterRoadsController = TextEditingController();
   final TextEditingController chapterResultController = TextEditingController();
+  final TextEditingController roadIdController = TextEditingController();
   final TextEditingController episodeIdController = TextEditingController();
-  final TextEditingController episodeOrdinalController = TextEditingController();
+  final TextEditingController episodeOrdinalController =
+      TextEditingController();
   final TextEditingController refererController = TextEditingController();
   bool muliSources = true;
   bool useWebview = true;
@@ -81,6 +83,7 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
     searchResultController.text = plugin.searchResult;
     chapterRoadsController.text = plugin.chapterRoads;
     chapterResultController.text = plugin.chapterResult;
+    roadIdController.text = plugin.roadId;
     episodeIdController.text = plugin.episodeId;
     episodeOrdinalController.text = plugin.episodeOrdinal;
     refererController.text = plugin.referer;
@@ -115,6 +118,7 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
     searchResultController.dispose();
     chapterRoadsController.dispose();
     chapterResultController.dispose();
+    roadIdController.dispose();
     episodeIdController.dispose();
     episodeOrdinalController.dispose();
     refererController.dispose();
@@ -194,6 +198,13 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
                   controller: chapterResultController,
                   decoration: const InputDecoration(
                       labelText: 'ChapterResult', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: roadIdController,
+                  decoration: const InputDecoration(
+                      labelText: 'RoadId (可选, 稳定线路 XPath)',
+                      border: OutlineInputBorder()),
                 ),
                 const SizedBox(height: 20),
                 TextField(
@@ -503,6 +514,7 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
                   searchResult: searchResultController.text,
                   chapterRoads: chapterRoadsController.text,
                   chapterResult: chapterResultController.text,
+                  roadId: roadIdController.text,
                   episodeId: episodeIdController.text,
                   episodeOrdinal: episodeOrdinalController.text,
                   referer: refererController.text,
@@ -537,6 +549,7 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
               plugin.searchResult = searchResultController.text;
               plugin.chapterRoads = chapterRoadsController.text;
               plugin.chapterResult = chapterResultController.text;
+              plugin.roadId = roadIdController.text;
               plugin.episodeId = episodeIdController.text;
               plugin.episodeOrdinal = episodeOrdinalController.text;
               plugin.muliSources = muliSources;

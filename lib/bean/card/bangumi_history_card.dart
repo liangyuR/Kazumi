@@ -149,9 +149,9 @@ class _BangumiHistoryCardVState extends State<BangumiHistoryCardV> {
         : progressStableId ?? '';
     final targetEpisode = downloadedEpisodeForHistoryPlayback(
       downloadedEpisodes,
-      episodeNumber: widget.historyItem.lastWatchEpisode,
       stableId: stableId,
       preferredRoad: lastWatchProgress?.road,
+      preferredRoadId: lastWatchProgress?.roadId ?? widget.historyItem.roadId,
     );
     if (targetEpisode == null) {
       return false;
@@ -167,8 +167,8 @@ class _BangumiHistoryCardVState extends State<BangumiHistoryCardV> {
     videoPageController.initForOfflinePlayback(
       bangumiItem: widget.historyItem.bangumiItem,
       pluginName: widget.historyItem.adapterName,
-      episodeNumber: targetEpisode.episodeNumber,
       stableId: targetEpisode.stableId,
+      roadId: targetEpisode.roadId,
       road: targetEpisode.road,
       downloadedEpisodes: downloadedEpisodes,
     );
@@ -178,24 +178,15 @@ class _BangumiHistoryCardVState extends State<BangumiHistoryCardV> {
   Progress? _lastWatchProgress(History history) {
     final topStableId = history.stableId.trim();
     if (topStableId.isNotEmpty) {
+      final topRoadId = history.roadId.trim();
       for (final progress in history.progresses.values) {
-        if (progress.stableId == topStableId) {
+        if (progress.stableId == topStableId &&
+            (topRoadId.isEmpty || progress.roadId == topRoadId)) {
           return progress;
         }
       }
     }
 
-    final keyedProgress = history.progresses[history.lastWatchEpisode];
-    if (keyedProgress != null &&
-        keyedProgress.episode == history.lastWatchEpisode) {
-      return keyedProgress;
-    }
-
-    for (final progress in history.progresses.values) {
-      if (progress.episode == history.lastWatchEpisode) {
-        return progress;
-      }
-    }
     return null;
   }
 

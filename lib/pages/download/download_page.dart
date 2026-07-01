@@ -76,9 +76,7 @@ class _DownloadPageState extends State<DownloadPage> {
 
       final episodes = record.episodes.entries.toList()
         ..sort((a, b) {
-          final compare = a.value.episodeNumber.compareTo(
-            b.value.episodeNumber,
-          );
+          final compare = compareDownloadEpisodeOrder(a.value, b.value);
           return compare != 0 ? compare : a.key.compareTo(b.key);
         });
       final completedCount = downloadController.completedCount(record);
@@ -170,9 +168,7 @@ class _DownloadPageState extends State<DownloadPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  episode.episodeName.isNotEmpty
-                      ? episode.episodeName
-                      : '第${episode.episodeNumber}集',
+                  downloadEpisodeDisplayName(episode, fallbackKey: downloadKey),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 14),
@@ -354,6 +350,10 @@ class _DownloadPageState extends State<DownloadPage> {
   }
 
   void _playEpisode(DownloadRecord record, DownloadEpisode episode) {
+    if (episode.stableId.trim().isEmpty) {
+      KazumiDialog.showToast(message: '该缓存缺少稳定集身份');
+      return;
+    }
     final localPath = downloadController.getLocalVideoPathForEpisode(episode);
     if (localPath == null) {
       KazumiDialog.showToast(message: '本地文件不存在');
@@ -387,8 +387,8 @@ class _DownloadPageState extends State<DownloadPage> {
     videoPageController.initForOfflinePlayback(
       bangumiItem: bangumiItem,
       pluginName: record.pluginName,
-      episodeNumber: episode.episodeNumber,
       stableId: episode.stableId,
+      roadId: episode.roadId,
       road: episode.road,
       downloadedEpisodes: downloadedEpisodes,
     );
@@ -405,7 +405,7 @@ class _DownloadPageState extends State<DownloadPage> {
       builder: (context) => AlertDialog(
         title: const Text('删除下载'),
         content: Text(
-            '确定要删除「${episode.episodeName.isNotEmpty ? episode.episodeName : '第${episode.episodeNumber}集'}」的下载文件吗？'),
+            '确定要删除「${downloadEpisodeDisplayName(episode, fallbackKey: downloadKey)}」的下载文件吗？'),
         actions: [
           TextButton(
             onPressed: () => KazumiDialog.dismiss(),

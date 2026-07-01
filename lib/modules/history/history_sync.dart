@@ -58,6 +58,7 @@ class HistorySyncEvent {
     this.entryKind,
     this.episodePageUrl,
     this.stableId,
+    this.roadId,
     this.carriesWatchState = false,
   });
 
@@ -77,6 +78,7 @@ class HistorySyncEvent {
   final String? entryKind;
   final String? episodePageUrl;
   final String? stableId;
+  final String? roadId;
   final bool carriesWatchState;
 
   String get version => HistorySyncVersion.of(
@@ -94,6 +96,7 @@ class HistorySyncEvent {
     required int updatedAt,
     String? episodePageUrl,
     String? stableId,
+    String? roadId,
   }) {
     return HistorySyncEvent(
       eventId: '$deviceId:$seq',
@@ -110,6 +113,7 @@ class HistorySyncEvent {
       entryKind: history.entryKind,
       episodePageUrl: episodePageUrl ?? history.episodePageUrl,
       stableId: stableId,
+      roadId: roadId,
     );
   }
 
@@ -135,6 +139,7 @@ class HistorySyncEvent {
       entryKind: history.entryKind,
       episodePageUrl: history.episodePageUrl,
       stableId: history.stableId,
+      roadId: history.roadId,
       carriesWatchState: true,
     );
   }
@@ -191,6 +196,7 @@ class HistorySyncEvent {
       entryKind: json['entryKind'] as String?,
       episodePageUrl: json['episodePageUrl'] as String?,
       stableId: json['stableId'] as String?,
+      roadId: json['roadId'] as String?,
       carriesWatchState: (json['carriesWatchState'] as bool?) ??
           (json.containsKey('lastSrc') ||
               json.containsKey('lastWatchEpisodeName')),
@@ -217,6 +223,7 @@ class HistorySyncEvent {
       if (entryKind != null) 'entryKind': entryKind,
       if (episodePageUrl != null) 'episodePageUrl': episodePageUrl,
       if (stableId != null) 'stableId': stableId,
+      if (roadId != null) 'roadId': roadId,
       if (carriesWatchState) 'carriesWatchState': carriesWatchState,
     };
   }
@@ -235,7 +242,7 @@ class HistorySyncSnapshot {
   final int generatedAt;
   final List<History> histories;
   final Map<String, String> itemVersions;
-  final Map<String, Map<int, String>> progressVersions;
+  final Map<String, Map<String, String>> progressVersions;
   final Map<String, String> deletedVersions;
   final String? clearVersion;
 
@@ -250,9 +257,12 @@ class HistorySyncSnapshot {
   }
 
   factory HistorySyncSnapshot.fromHistories(List<History> histories) {
+    final validHistories = histories
+        .where((history) => history.stableId.trim().isNotEmpty)
+        .toList();
     final itemVersions = <String, String>{};
-    final progressVersions = <String, Map<int, String>>{};
-    for (final history in histories) {
+    final progressVersions = <String, Map<String, String>>{};
+    for (final history in validHistories) {
       history.entryKind = HistoryEntryKind.normalize(history.entryKind);
       final version = HistorySyncVersion.of(
         updatedAt: history.lastWatchTime.millisecondsSinceEpoch,
@@ -261,15 +271,17 @@ class HistorySyncSnapshot {
       itemVersions[history.key] = version;
       progressVersions[history.key] = {
         for (final entry in history.progresses.entries)
-          entry.key: HistorySyncVersion.of(
-            updatedAt: entry.value.effectiveUpdatedAtMs(history.lastWatchTime),
-            eventId: 'local-import:${history.key}:${entry.key}',
-          ),
+          if (entry.value.stableId.trim().isNotEmpty)
+            entry.key: HistorySyncVersion.of(
+              updatedAt:
+                  entry.value.effectiveUpdatedAtMs(history.lastWatchTime),
+              eventId: 'local-import:${history.key}:${entry.key}',
+            ),
       };
     }
     return HistorySyncSnapshot(
       generatedAt: DateTime.now().millisecondsSinceEpoch,
-      histories: histories,
+      histories: validHistories,
       itemVersions: itemVersions,
       progressVersions: progressVersions,
       deletedVersions: const {},
@@ -281,14 +293,9 @@ class HistorySyncSnapshot {
         .map((item) => HistorySyncCodec.historyFromJson(
               Map<String, dynamic>.from(item as Map),
             ))
+        .where((history) => history.stableId.trim().isNotEmpty)
         .toList();
-    final keyMap = {
-      for (final history in histories) history.key: history.key,
-      for (final history in histories)
-        if (history.entryKind == HistoryEntryKind.online)
-          History.legacyKey(history.adapterName, history.bangumiItem):
-              history.key,
-    };
+    final keyMap = {for (final history in histories) history.key: history.key};
     String canonicalSnapshotKey(String key) => keyMap[key] ?? key;
     final progressJson = Map<String, dynamic>.from(
       (json['progressVersions'] as Map?) ?? const {},
@@ -299,7 +306,7 @@ class HistorySyncSnapshot {
     final progressVersions = {
       for (final entry in progressJson.entries)
         entry.key: (Map<String, dynamic>.from(entry.value as Map)).map(
-          (episode, version) => MapEntry(int.parse(episode), '$version'),
+          (episodeKey, version) => MapEntry(episodeKey, '$version'),
         ),
     };
     final deletedVersions = Map<String, String>.from(
@@ -350,13 +357,13 @@ class HistorySyncState {
   HistorySyncState._({
     required Map<String, History> histories,
     required Map<String, String> itemVersions,
-    required Map<String, Map<int, String>> progressVersions,
+    required Map<String, Map<String, String>> progressVersions,
     required Map<String, String> deletedVersions,
     required this.clearVersion,
   })  : histories = Map.of(histories),
         itemVersions = Map.of(itemVersions),
         progressVersions = progressVersions.map(
-          (key, value) => MapEntry(key, Map<int, String>.of(value)),
+          (key, value) => MapEntry(key, Map<String, String>.of(value)),
         ),
         deletedVersions = Map.of(deletedVersions);
 
@@ -365,12 +372,11 @@ class HistorySyncState {
     final keyMap = <String, String>{};
     for (final history in snapshot.histories) {
       history.entryKind = HistoryEntryKind.normalize(history.entryKind);
+      if (history.stableId.trim().isEmpty) {
+        continue;
+      }
       histories[history.key] = history;
       keyMap[history.key] = history.key;
-      if (history.entryKind == HistoryEntryKind.online) {
-        keyMap[History.legacyKey(history.adapterName, history.bangumiItem)] =
-            history.key;
-      }
     }
     String canonicalSnapshotKey(String key) => keyMap[key] ?? key;
 
@@ -394,7 +400,7 @@ class HistorySyncState {
 
   final Map<String, History> histories;
   final Map<String, String> itemVersions;
-  final Map<String, Map<int, String>> progressVersions;
+  final Map<String, Map<String, String>> progressVersions;
   final Map<String, String> deletedVersions;
   String? clearVersion;
 
@@ -435,92 +441,9 @@ class HistorySyncState {
         progressMs == null) {
       throw const FormatException('Invalid upsertProgress history event');
     }
-    if (!_isNewerThanClear(event.version)) {
+    final stableId = event.stableId?.trim() ?? '';
+    if (stableId.isEmpty) {
       return;
-    }
-    final entryKind =
-        HistoryEntryKind.normalize(event.entryKind ?? HistoryEntryKind.online);
-    final entityKey = History.scopedKey(adapterName, bangumiItem, entryKind);
-    final legacyEntityKey = History.legacyKey(adapterName, bangumiItem);
-    final deletedVersion = _deletedVersionForUpsert(
-      entityKey,
-      legacyEntityKey: legacyEntityKey,
-      entryKind: entryKind,
-    );
-    if (deletedVersion != null &&
-        HistorySyncVersion.compare(event.version, deletedVersion) <= 0) {
-      return;
-    }
-
-    final current = histories[entityKey] ??
-        History(
-          bangumiItem,
-          episode,
-          adapterName,
-          DateTime.fromMillisecondsSinceEpoch(event.updatedAt),
-          event.lastSrc ?? '',
-          event.lastWatchEpisodeName ?? '',
-          entryKind: entryKind,
-        );
-
-    final episodePageUrl = event.episodePageUrl ?? '';
-    final stableId = event.stableId ?? '';
-    final progressMatch = _HistoryEpisodeMatcher.find(
-      current,
-      episode: episode,
-      road: road,
-      episodePageUrl: episodePageUrl,
-      stableId: stableId,
-      allowStableIdOnlyFallback: false,
-    );
-    final progressBucket = progressMatch?.bucket ??
-        _HistoryEpisodeMatcher.bucketForNewProgress(
-          current,
-          episode: episode,
-          road: road,
-          episodePageUrl: episodePageUrl,
-          stableId: stableId,
-        );
-    final episodeVersions = progressVersions.putIfAbsent(entityKey, () => {});
-    final progressVersion = episodeVersions[progressBucket];
-    if (progressVersion == null ||
-        HistorySyncVersion.compare(event.version, progressVersion) >= 0) {
-      final progress = progressMatch?.progress ??
-          Progress(
-            episode,
-            road,
-            progressMs,
-            updatedAtMs: event.updatedAt,
-            episodePageUrl: episodePageUrl,
-            stableId: stableId,
-          );
-      progress.episode = episode;
-      progress.road = road;
-      progress.progress = Duration(milliseconds: progressMs);
-      progress.updatedAtMs = event.updatedAt;
-      progress.episodePageUrl = episodePageUrl;
-      if (stableId.isNotEmpty) {
-        progress.stableId = stableId;
-      }
-      current.progresses[progressBucket] = progress;
-      episodeVersions[progressBucket] = event.version;
-    }
-    histories[entityKey] = current;
-    deletedVersions.remove(entityKey);
-    if (entryKind == HistoryEntryKind.online) {
-      deletedVersions.remove(legacyEntityKey);
-    }
-    if (_shouldApplyLegacyWatchState(event)) {
-      _applyUpsertWatchState(event);
-    }
-  }
-
-  void _applyUpsertWatchState(HistorySyncEvent event) {
-    final bangumiItem = event.bangumiItem;
-    final adapterName = event.adapterName;
-    final episode = event.episode;
-    if (bangumiItem == null || adapterName == null || episode == null) {
-      throw const FormatException('Invalid upsertWatchState history event');
     }
     if (!_isNewerThanClear(event.version)) {
       return;
@@ -528,12 +451,7 @@ class HistorySyncState {
     final entryKind =
         HistoryEntryKind.normalize(event.entryKind ?? HistoryEntryKind.online);
     final entityKey = History.scopedKey(adapterName, bangumiItem, entryKind);
-    final legacyEntityKey = History.legacyKey(adapterName, bangumiItem);
-    final deletedVersion = _deletedVersionForUpsert(
-      entityKey,
-      legacyEntityKey: legacyEntityKey,
-      entryKind: entryKind,
-    );
+    final deletedVersion = deletedVersions[entityKey];
     if (deletedVersion != null &&
         HistorySyncVersion.compare(event.version, deletedVersion) <= 0) {
       return;
@@ -550,6 +468,90 @@ class HistorySyncState {
           entryKind: entryKind,
           episodePageUrl: event.episodePageUrl ?? '',
           stableId: event.stableId ?? '',
+          roadId: event.roadId ?? '',
+        );
+
+    final episodePageUrl = event.episodePageUrl ?? '';
+    final roadId = event.roadId ?? '';
+    final progressMatch = _HistoryEpisodeMatcher.find(
+      current,
+      episode: episode,
+      road: road,
+      roadId: roadId,
+      stableId: stableId,
+      allowStableIdOnlyFallback: false,
+    );
+    final progressBucket = progressMatch?.bucket ??
+        _HistoryEpisodeMatcher.bucketForNewProgress(
+          current,
+          episode: episode,
+          road: road,
+          roadId: roadId,
+          stableId: stableId,
+        );
+    final episodeVersions = progressVersions.putIfAbsent(entityKey, () => {});
+    final progressVersion = episodeVersions[progressBucket];
+    if (progressVersion == null ||
+        HistorySyncVersion.compare(event.version, progressVersion) >= 0) {
+      final progress = progressMatch?.progress ??
+          Progress(
+            episode,
+            road,
+            progressMs,
+            updatedAtMs: event.updatedAt,
+            episodePageUrl: episodePageUrl,
+            stableId: stableId,
+            roadId: roadId,
+          );
+      progress.episode = episode;
+      progress.road = road;
+      progress.progress = Duration(milliseconds: progressMs);
+      progress.updatedAtMs = event.updatedAt;
+      progress.episodePageUrl = episodePageUrl;
+      progress.stableId = stableId;
+      progress.roadId = roadId;
+      current.progresses[progressBucket] = progress;
+      episodeVersions[progressBucket] = event.version;
+    }
+    histories[entityKey] = current;
+    deletedVersions.remove(entityKey);
+  }
+
+  void _applyUpsertWatchState(HistorySyncEvent event) {
+    final bangumiItem = event.bangumiItem;
+    final adapterName = event.adapterName;
+    final episode = event.episode;
+    if (bangumiItem == null || adapterName == null || episode == null) {
+      throw const FormatException('Invalid upsertWatchState history event');
+    }
+    final stableId = event.stableId?.trim() ?? '';
+    if (stableId.isEmpty) {
+      return;
+    }
+    if (!_isNewerThanClear(event.version)) {
+      return;
+    }
+    final entryKind =
+        HistoryEntryKind.normalize(event.entryKind ?? HistoryEntryKind.online);
+    final entityKey = History.scopedKey(adapterName, bangumiItem, entryKind);
+    final deletedVersion = deletedVersions[entityKey];
+    if (deletedVersion != null &&
+        HistorySyncVersion.compare(event.version, deletedVersion) <= 0) {
+      return;
+    }
+
+    final current = histories[entityKey] ??
+        History(
+          bangumiItem,
+          episode,
+          adapterName,
+          DateTime.fromMillisecondsSinceEpoch(event.updatedAt),
+          event.lastSrc ?? '',
+          event.lastWatchEpisodeName ?? '',
+          entryKind: entryKind,
+          episodePageUrl: event.episodePageUrl ?? '',
+          stableId: event.stableId ?? '',
+          roadId: event.roadId ?? '',
         );
 
     final itemVersion = itemVersions[entityKey];
@@ -568,14 +570,12 @@ class HistorySyncState {
       }
       current.entryKind = entryKind;
       current.episodePageUrl = event.episodePageUrl ?? '';
-      current.stableId = event.stableId ?? '';
+      current.stableId = stableId;
+      current.roadId = event.roadId ?? '';
       itemVersions[entityKey] = event.version;
     }
     histories[entityKey] = current;
     deletedVersions.remove(entityKey);
-    if (entryKind == HistoryEntryKind.online) {
-      deletedVersions.remove(legacyEntityKey);
-    }
   }
 
   void _applyDelete(HistorySyncEvent event) {
@@ -583,18 +583,17 @@ class HistorySyncState {
     if (rawEntityKey == null || !_isNewerThanClear(event.version)) {
       return;
     }
-    final entityKey = _canonicalExistingEntityKey(rawEntityKey);
-    final itemVersion = itemVersions[entityKey];
-    final deletedVersion = deletedVersions[entityKey];
+    final itemVersion = itemVersions[rawEntityKey];
+    final deletedVersion = deletedVersions[rawEntityKey];
     final newerThanItem = itemVersion == null ||
         HistorySyncVersion.compare(event.version, itemVersion) >= 0;
     final newerThanDelete = deletedVersion == null ||
         HistorySyncVersion.compare(event.version, deletedVersion) >= 0;
     if (newerThanItem && newerThanDelete) {
-      histories.remove(entityKey);
-      itemVersions.remove(entityKey);
-      progressVersions.remove(entityKey);
-      deletedVersions[entityKey] = event.version;
+      histories.remove(rawEntityKey);
+      itemVersions.remove(rawEntityKey);
+      progressVersions.remove(rawEntityKey);
+      deletedVersions[rawEntityKey] = event.version;
     }
   }
 
@@ -615,50 +614,6 @@ class HistorySyncState {
         HistorySyncVersion.compare(version, currentClearVersion) > 0;
   }
 
-  String _canonicalExistingEntityKey(String key) {
-    if (histories.containsKey(key) ||
-        itemVersions.containsKey(key) ||
-        progressVersions.containsKey(key)) {
-      return key;
-    }
-    for (final history in histories.values) {
-      if (history.entryKind == HistoryEntryKind.online &&
-          History.legacyKey(history.adapterName, history.bangumiItem) == key) {
-        return history.key;
-      }
-    }
-    return key;
-  }
-
-  String? _deletedVersionForUpsert(
-    String entityKey, {
-    required String legacyEntityKey,
-    required String entryKind,
-  }) {
-    final scopedVersion = deletedVersions[entityKey];
-    if (entryKind != HistoryEntryKind.online) {
-      return scopedVersion;
-    }
-    return _newerVersion(scopedVersion, deletedVersions[legacyEntityKey]);
-  }
-
-  String? _newerVersion(String? a, String? b) {
-    if (a == null) {
-      return b;
-    }
-    if (b == null) {
-      return a;
-    }
-    return HistorySyncVersion.compare(a, b) >= 0 ? a : b;
-  }
-
-  bool _shouldApplyLegacyWatchState(HistorySyncEvent event) {
-    final hasWatchStatePayload = event.carriesWatchState ||
-        event.lastSrc != null ||
-        event.lastWatchEpisodeName != null;
-    return hasWatchStatePayload && !event.eventId.startsWith('local-state:');
-  }
-
   static Map<String, String> _canonicalizeVersionMap(
     Map<String, String> versions,
     String Function(String key) canonicalKey,
@@ -675,11 +630,11 @@ class HistorySyncState {
     return result;
   }
 
-  static Map<String, Map<int, String>> _canonicalizeProgressVersionMap(
-    Map<String, Map<int, String>> versions,
+  static Map<String, Map<String, String>> _canonicalizeProgressVersionMap(
+    Map<String, Map<String, String>> versions,
     String Function(String key) canonicalKey,
   ) {
-    final result = <String, Map<int, String>>{};
+    final result = <String, Map<String, String>>{};
     for (final entry in versions.entries) {
       final key = canonicalKey(entry.key);
       final target = result.putIfAbsent(key, () => {});
@@ -701,7 +656,7 @@ class _HistoryEpisodeMatch {
     required this.progress,
   });
 
-  final int bucket;
+  final String bucket;
   final Progress progress;
 }
 
@@ -710,138 +665,63 @@ class _HistoryEpisodeMatcher {
     History history, {
     required int episode,
     int? road,
-    String episodePageUrl = '',
+    String roadId = '',
     String stableId = '',
     bool allowStableIdOnlyFallback = true,
   }) {
     final id = stableId.trim();
-    if (id.isNotEmpty) {
-      final stableMatches = <MapEntry<int, Progress>>[];
-      for (final entry in history.progresses.entries) {
-        if (entry.value.stableId != id) {
-          continue;
-        }
-        if (road != null && entry.value.road == road) {
-          return _HistoryEpisodeMatch(
-            bucket: entry.key,
-            progress: entry.value,
-          );
-        }
-        stableMatches.add(entry);
-      }
-      if (allowStableIdOnlyFallback && stableMatches.length == 1) {
-        final entry = stableMatches.single;
-        return _HistoryEpisodeMatch(
-          bucket: entry.key,
-          progress: entry.value,
-        );
-      }
-    }
-
-    final pageUrl = episodePageUrl.trim();
-    if (pageUrl.isNotEmpty) {
-      final pageUrlMatches = <MapEntry<int, Progress>>[];
-      for (final entry in history.progresses.entries) {
-        if (entry.value.episodePageUrl == pageUrl &&
-            (id.isEmpty ||
-                entry.value.stableId.isEmpty ||
-                entry.value.stableId == id)) {
-          if (road != null && entry.value.road == road) {
-            return _HistoryEpisodeMatch(
-              bucket: entry.key,
-              progress: entry.value,
-            );
-          }
-          pageUrlMatches.add(entry);
-        }
-      }
-      if (road == null && pageUrlMatches.isNotEmpty) {
-        final entry = pageUrlMatches.first;
-        return _HistoryEpisodeMatch(
-          bucket: entry.key,
-          progress: entry.value,
-        );
-      }
-
-      final legacyProgress = history.progresses[episode];
-      if (legacyProgress != null &&
-          legacyProgress.episode == episode &&
-          _matchesRoad(legacyProgress, road) &&
-          legacyProgress.episodePageUrl.isEmpty &&
-          legacyProgress.stableId.isEmpty) {
-        return _HistoryEpisodeMatch(
-          bucket: episode,
-          progress: legacyProgress,
-        );
-      }
-      for (final entry in history.progresses.entries) {
-        final progress = entry.value;
-        if (progress.episode == episode &&
-            _matchesRoad(progress, road) &&
-            progress.episodePageUrl.isEmpty &&
-            progress.stableId.isEmpty) {
-          return _HistoryEpisodeMatch(
-            bucket: entry.key,
-            progress: progress,
-          );
-        }
-      }
+    if (id.isEmpty) {
       return null;
     }
 
-    if (id.isNotEmpty) {
-      return null;
-    }
-
-    final progress = history.progresses[episode];
-    if (progress != null &&
-        progress.episode == episode &&
-        _matchesRoad(progress, road)) {
-      return _HistoryEpisodeMatch(bucket: episode, progress: progress);
-    }
-
+    final scopedRoadId = roadId.trim();
+    final stableMatches = <MapEntry<String, Progress>>[];
     for (final entry in history.progresses.entries) {
-      if (entry.value.episode == episode && _matchesRoad(entry.value, road)) {
+      final progress = entry.value;
+      if (progress.stableId != id) {
+        continue;
+      }
+      if (scopedRoadId.isNotEmpty && progress.roadId == scopedRoadId) {
         return _HistoryEpisodeMatch(
           bucket: entry.key,
           progress: entry.value,
         );
       }
+      if (scopedRoadId.isEmpty && road != null && progress.road == road) {
+        return _HistoryEpisodeMatch(
+          bucket: entry.key,
+          progress: entry.value,
+        );
+      }
+      stableMatches.add(entry);
+    }
+
+    if (allowStableIdOnlyFallback &&
+        scopedRoadId.isEmpty &&
+        road == null &&
+        stableMatches.length == 1) {
+      final entry = stableMatches.single;
+      return _HistoryEpisodeMatch(
+        bucket: entry.key,
+        progress: entry.value,
+      );
     }
     return null;
   }
 
-  static int bucketForNewProgress(
+  static String bucketForNewProgress(
     History history, {
     required int episode,
     int? road,
-    String episodePageUrl = '',
-    String stableId = '',
+    String roadId = '',
+    required String stableId,
   }) {
-    final pageUrl = episodePageUrl.trim();
-    final id = stableId.trim();
-    final existing = history.progresses[episode];
-    if (existing == null) {
-      return episode;
-    }
-    if (existing.episode == episode &&
-        _matchesRoad(existing, road) &&
-        (id.isEmpty || existing.stableId.isEmpty || existing.stableId == id) &&
-        (pageUrl.isEmpty ||
-            existing.episodePageUrl.isEmpty ||
-            existing.episodePageUrl == pageUrl)) {
-      return episode;
-    }
-
-    var bucket = episode;
-    while (history.progresses.containsKey(bucket)) {
-      bucket++;
-    }
-    return bucket;
-  }
-
-  static bool _matchesRoad(Progress progress, int? road) {
-    return road == null || progress.road == road;
+    return historyProgressKey(
+      stableId: stableId,
+      episode: episode,
+      road: road,
+      roadId: roadId,
+    );
   }
 
   _HistoryEpisodeMatcher._();
@@ -909,13 +789,16 @@ class HistorySyncCodec {
       entryKind: json['entryKind'] as String? ?? HistoryEntryKind.online,
       episodePageUrl: json['episodePageUrl'] as String? ?? '',
       stableId: json['stableId'] as String? ?? '',
+      roadId: json['roadId'] as String? ?? '',
     );
     history.progresses = {
       for (final entry
           in Map<String, dynamic>.from(json['progresses'] as Map).entries)
-        int.parse(entry.key): progressFromJson(
-          Map<String, dynamic>.from(entry.value as Map),
-        ),
+        if ((entry.value as Map)['stableId']?.toString().trim().isNotEmpty ==
+            true)
+          entry.key: progressFromJson(
+            Map<String, dynamic>.from(entry.value as Map),
+          ),
     };
     return history;
   }
@@ -931,6 +814,7 @@ class HistorySyncCodec {
       'entryKind': history.entryKind,
       'episodePageUrl': history.episodePageUrl,
       'stableId': history.stableId,
+      'roadId': history.roadId,
       'progresses': {
         for (final entry in history.progresses.entries)
           entry.key.toString(): progressToJson(entry.value),
@@ -946,6 +830,7 @@ class HistorySyncCodec {
       updatedAtMs: (json['updatedAtMs'] as num?)?.toInt() ?? 0,
       episodePageUrl: json['episodePageUrl'] as String? ?? '',
       stableId: json['stableId'] as String? ?? '',
+      roadId: json['roadId'] as String? ?? '',
     );
   }
 
@@ -957,6 +842,7 @@ class HistorySyncCodec {
       'updatedAtMs': progress.updatedAtMs,
       'episodePageUrl': progress.episodePageUrl,
       'stableId': progress.stableId,
+      'roadId': progress.roadId,
     };
   }
 

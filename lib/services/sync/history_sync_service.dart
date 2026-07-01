@@ -32,6 +32,7 @@ class HistorySyncService {
     required int progressMs,
     required String episodePageUrl,
     required String stableId,
+    required String roadId,
     int? updatedAt,
   }) async {
     final deviceId = await getDeviceId();
@@ -50,6 +51,7 @@ class HistorySyncService {
         updatedAt: effectiveUpdatedAt,
         episodePageUrl: episodePageUrl,
         stableId: stableId,
+        roadId: roadId,
       ),
       HistorySyncEvent.upsertWatchState(
         deviceId: deviceId,
@@ -140,8 +142,14 @@ class HistorySyncService {
     final events = <HistorySyncEvent>[];
     for (final history in histories) {
       history.entryKind = HistoryEntryKind.normalize(history.entryKind);
+      if (history.stableId.trim().isEmpty) {
+        continue;
+      }
       for (final entry in history.progresses.entries) {
         final progress = entry.value;
+        if (progress.stableId.trim().isEmpty) {
+          continue;
+        }
         final updatedAt = progress.effectiveUpdatedAtMs(history.lastWatchTime);
         events.add(
           HistorySyncEvent(
@@ -162,6 +170,7 @@ class HistorySyncService {
             entryKind: history.entryKind,
             episodePageUrl: progress.episodePageUrl,
             stableId: progress.stableId,
+            roadId: progress.roadId,
           ),
         );
       }
@@ -181,6 +190,7 @@ class HistorySyncService {
           entryKind: history.entryKind,
           episodePageUrl: history.episodePageUrl,
           stableId: history.stableId,
+          roadId: history.roadId,
           carriesWatchState: true,
         ),
       );

@@ -205,14 +205,6 @@ class WebDav {
         await _readHistorySnapshot() ?? HistorySyncSnapshot.empty();
     final remoteEvents = await _readRemoteHistoryEvents();
 
-    if (remoteSnapshot.histories.isEmpty &&
-        remoteSnapshot.itemVersions.isEmpty &&
-        remoteEvents.isEmpty &&
-        await _tryImportLegacyHistory()) {
-      remoteSnapshot = historySync.buildSnapshotFromLocal();
-      await _writeHistorySnapshot(remoteSnapshot);
-    }
-
     final mergedSnapshot = HistorySyncMerger.merge(
       snapshot: remoteSnapshot,
       events: [
@@ -316,23 +308,6 @@ class WebDav {
     return HistorySyncService.buildStateEventsFromHistories(
       GStorage.histories.values,
     );
-  }
-
-  Future<bool> _tryImportLegacyHistory() async {
-    try {
-      final fileName = 'histories.tmp';
-      final existingFile = File('${webDavLocalTempDirectory.path}/$fileName');
-      if (await existingFile.exists()) {
-        await existingFile.delete();
-      }
-      await client.read2File('$_syncRootPath/$fileName', existingFile.path);
-      await GStorage.patchHistory(existingFile.path);
-      KazumiLogger().i('WebDav: imported legacy history backup');
-      return true;
-    } catch (e) {
-      KazumiLogger().w('WebDav: no legacy history backup imported', error: e);
-      return false;
-    }
   }
 
   Future<void> _writeHistorySnapshot(HistorySyncSnapshot snapshot) async {

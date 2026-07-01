@@ -144,6 +144,7 @@ abstract class _PlayerDanmakuController with Store {
     int episode, {
     String stableId = '',
     required int road,
+    String roadId = '',
   }) async {
     if (isLocalPlayback()) {
       return await _fetchCachedDanmaku(
@@ -152,6 +153,7 @@ abstract class _PlayerDanmakuController with Store {
         episode,
         stableId: stableId,
         road: road,
+        roadId: roadId,
       );
     }
     return await _fetchDanDanmakuByBgmBangumiID(
@@ -200,6 +202,7 @@ abstract class _PlayerDanmakuController with Store {
     int episode, {
     String stableId = '',
     required int road,
+    String roadId = '',
   }) async {
     KazumiLogger().i(
         'PlayerController: attempting to load cached danmaku for episode $episode');
@@ -212,6 +215,7 @@ abstract class _PlayerDanmakuController with Store {
         episode,
         stableId: stableId,
         road: road,
+        roadId: roadId,
       );
 
       if (cachedDanmakus != null && cachedDanmakus.isNotEmpty) {
@@ -234,7 +238,7 @@ abstract class _PlayerDanmakuController with Store {
                   .i('PlayerController: fetched ${res.length} danmakus online');
               _saveDanmakuToCache(downloadController, bangumiId, pluginName,
                   episode, res, nextBangumiID,
-                  stableId: stableId, road: road);
+                  stableId: stableId, road: road, roadId: roadId);
             }
             return DanmakuLoadResult.success(
               danmakus: res,
@@ -268,6 +272,7 @@ abstract class _PlayerDanmakuController with Store {
     int danDanID, {
     String stableId = '',
     required int road,
+    String roadId = '',
   }) {
     try {
       downloadController.updateCachedDanmakus(
@@ -278,6 +283,7 @@ abstract class _PlayerDanmakuController with Store {
         danDanID,
         stableId: stableId,
         road: road,
+        roadId: roadId,
       );
       KazumiLogger()
           .i('PlayerController: saved ${danmakus.length} danmakus to cache');

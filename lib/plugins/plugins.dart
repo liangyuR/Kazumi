@@ -69,6 +69,10 @@ class Plugin {
   String chapterRoads;
   String chapterResult;
 
+  /// 可选：抓取源站“稳定线路标识”的 XPath（相对每个 [chapterRoads] 节点）。
+  /// 命中时作为 [Road.roadId]；为空则由该线路内 episode stableId 集合派生。
+  String roadId;
+
   /// 可选：抓取源站“稳定 episode 标识”的 XPath（相对每个 [chapterResult] 节点）。
   /// 命中时作为 [EpisodeIdentity.stableId]；为空则回退用归一化相对 path。
   String episodeId;
@@ -100,6 +104,7 @@ class Plugin {
     required this.chapterRoads,
     required this.chapterResult,
     required this.referer,
+    this.roadId = '',
     this.episodeId = '',
     this.episodeOrdinal = '',
     AntiCrawlerConfig? antiCrawlerConfig,
@@ -125,6 +130,7 @@ class Plugin {
         searchResult: json['searchResult'],
         chapterRoads: json['chapterRoads'],
         chapterResult: json['chapterResult'],
+        roadId: json['roadId'] ?? '',
         episodeId: json['episodeId'] ?? '',
         episodeOrdinal: json['episodeOrdinal'] ?? '',
         referer: json['referer'] ?? '',
@@ -154,6 +160,7 @@ class Plugin {
         searchResult: '',
         chapterRoads: '',
         chapterResult: '',
+        roadId: '',
         episodeId: '',
         episodeOrdinal: '',
         referer: '',
@@ -180,6 +187,7 @@ class Plugin {
     data['searchResult'] = searchResult;
     data['chapterRoads'] = chapterRoads;
     data['chapterResult'] = chapterResult;
+    data['roadId'] = roadId;
     data['episodeId'] = episodeId;
     data['episodeOrdinal'] = episodeOrdinal;
     data['referer'] = referer;
@@ -295,9 +303,16 @@ class Plugin {
             final String itemName =
                 (item.node.text ?? '').replaceAll(RegExp(r'\s+'), '');
             final String normalizedUrl = normalizeEpisodeUrl(baseUrl, rawUrl);
+            final String stableId =
+                _resolveEpisodeStableId(item, baseUrl, normalizedUrl);
+            if (stableId.isEmpty) {
+              KazumiLogger()
+                  .w('Plugin: $name skipped episode without stable identity');
+              return;
+            }
             episodes.add(
               EpisodeIdentity(
-                stableId: _resolveEpisodeStableId(item, baseUrl, normalizedUrl),
+                stableId: stableId,
                 pageUrl: normalizedUrl,
                 title: itemName,
                 ordinal: _resolveEpisodeOrdinal(item, itemName),
@@ -306,13 +321,59 @@ class Plugin {
             );
           });
           if (episodes.isNotEmpty) {
-            roadList.add(Road(name: '播放线路$count', data: episodes));
+            final String resolvedRoadId =
+                _resolveRoadStableId(element, episodes, roadIndex);
+            roadList.add(Road(
+              name: '播放线路$count',
+              roadId: resolvedRoadId,
+              data: episodes
+                  .map((episode) => episode.copyWith(roadId: resolvedRoadId))
+                  .toList(),
+            ));
             count++;
           }
         } catch (_) {}
       });
     } catch (_) {}
     return roadList;
+  }
+
+  /// 计算线路的稳定身份 [Road.roadId]。
+  ///
+  /// 优先使用规则配置的 [roadId] XPath 抓取源站显式标识；为空或未命中时，
+  /// 用本线路内 episode stableId 的无序签名派生。后者能抵御线路数组重排，
+  /// 但无法区分两个 episode 集合完全相同的线路；这种源站需要显式 [roadId]。
+  String _resolveRoadStableId(
+    dynamic roadNode,
+    List<EpisodeIdentity> episodes,
+    int roadIndex,
+  ) {
+    if (roadId.isNotEmpty) {
+      final explicit = _extractNodeValue(roadNode, roadId);
+      if (explicit.isNotEmpty) {
+        return explicit;
+      }
+    }
+
+    final ids = episodes
+        .map((episode) => episode.stableId.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    if (ids.isEmpty) {
+      return 'road-index:$roadIndex';
+    }
+    return 'episodes:${ids.length}:${_stableStringHash(ids.join('\n'))}';
+  }
+
+  String _stableStringHash(String value) {
+    var hash = 0x811c9dc5;
+    for (final codeUnit in value.codeUnits) {
+      hash ^= codeUnit;
+      hash = (hash * 0x01000193) & 0x7fffffff;
+    }
+    return hash.toRadixString(16).padLeft(8, '0');
   }
 
   /// 计算单集的稳定身份 [EpisodeIdentity.stableId]。

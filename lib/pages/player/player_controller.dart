@@ -39,6 +39,7 @@ class PlayerController {
     bangumiId: () => bangumiId,
     currentEpisode: () => currentEpisode,
     currentEpisodeStableId: () => currentEpisodeStableId,
+    currentEpisodeRoadId: () => currentEpisodeRoadId,
     currentRoad: () => currentRoad,
     playing: () => playback.playing,
     currentPosition: () => playback.currentPosition,
@@ -58,6 +59,7 @@ class PlayerController {
   late int currentEpisode;
   late int currentDanmakuEpisodeNumber;
   late String currentEpisodeStableId;
+  late String currentEpisodeRoadId;
   late int currentRoad;
   late String referer;
   String? coverUrl;
@@ -148,6 +150,7 @@ class PlayerController {
     currentEpisode = params.episode;
     currentDanmakuEpisodeNumber = params.danmakuEpisodeNumber;
     currentEpisodeStableId = params.stableId;
+    currentEpisodeRoadId = params.roadId;
     currentRoad = params.currentRoad;
     referer = params.referer;
 
@@ -381,7 +384,8 @@ class PlayerController {
       String username,
       Future<void> Function(int episode, {int currentRoad, int offset})
           changeEpisode,
-      Future<void> Function(String stableId, {int currentRoad, int offset})
+      Future<void> Function(String stableId,
+              {int currentRoad, String roadId, int offset})
           changeEpisodeByStableId,
       {bool enableTLS = true}) async {
     await syncplay.createRoom(

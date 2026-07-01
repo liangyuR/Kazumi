@@ -25,6 +25,7 @@ class PlaybackHistoryIdentity {
     this.onlineBangumiSrc = '',
     this.episodePageUrl = '',
     this.stableId = '',
+    this.roadId = '',
   });
 
   final BangumiItem bangumiItem;
@@ -39,7 +40,11 @@ class PlaybackHistoryIdentity {
   /// 订阅规则产出的稳定身份（与域名/顺序无关），历史进度匹配主键。
   final String stableId;
 
-  bool get canRecord => pluginName.isNotEmpty && episodeNumber > 0;
+  /// 订阅规则产出的稳定线路身份，用于消除 roadList 数组下标重排带来的歧义。
+  final String roadId;
+
+  bool get canRecord =>
+      pluginName.isNotEmpty && episodeNumber > 0 && stableId.trim().isNotEmpty;
 
   factory PlaybackHistoryIdentity.online({
     required BangumiItem bangumiItem,
@@ -50,6 +55,7 @@ class PlaybackHistoryIdentity {
     required String onlineBangumiSrc,
     required String episodePageUrl,
     String stableId = '',
+    String roadId = '',
   }) {
     return PlaybackHistoryIdentity(
       bangumiItem: bangumiItem,
@@ -61,6 +67,7 @@ class PlaybackHistoryIdentity {
       onlineBangumiSrc: onlineBangumiSrc,
       episodePageUrl: episodePageUrl,
       stableId: stableId,
+      roadId: roadId,
     );
   }
 
@@ -72,6 +79,7 @@ class PlaybackHistoryIdentity {
     required int road,
     required String episodePageUrl,
     String stableId = '',
+    String roadId = '',
   }) {
     return PlaybackHistoryIdentity(
       bangumiItem: bangumiItem,
@@ -82,6 +90,7 @@ class PlaybackHistoryIdentity {
       entryKind: HistoryEntryKind.offline,
       episodePageUrl: episodePageUrl,
       stableId: stableId,
+      roadId: roadId,
     );
   }
 }
@@ -89,7 +98,7 @@ class PlaybackHistoryIdentity {
 @HiveType(typeId: 1)
 class History {
   @HiveField(0)
-  Map<int, Progress> progresses = {};
+  Map<String, Progress> progresses = {};
 
   @HiveField(1)
   int lastWatchEpisode;
@@ -118,6 +127,9 @@ class History {
   @HiveField(9, defaultValue: '')
   String stableId;
 
+  @HiveField(10, defaultValue: '')
+  String roadId;
+
   String get key => scopedKey(adapterName, bangumiItem, entryKind);
 
   History(
@@ -130,12 +142,13 @@ class History {
     this.entryKind = HistoryEntryKind.online,
     this.episodePageUrl = '',
     this.stableId = '',
+    this.roadId = '',
   });
 
-  static String legacyKey(String n, BangumiItem s) => n + s.id.toString();
+  static String baseKey(String n, BangumiItem s) => n + s.id.toString();
 
   static String scopedKey(String n, BangumiItem s, String entryKind) {
-    return '${legacyKey(n, s)}::${HistoryEntryKind.normalize(entryKind)}';
+    return '${baseKey(n, s)}::${HistoryEntryKind.normalize(entryKind)}';
   }
 
   static String getKey(
@@ -150,6 +163,30 @@ class History {
   String toString() {
     return 'Adapter: $adapterName, anime: ${bangumiItem.name}';
   }
+}
+
+String historyProgressKey({
+  required String stableId,
+  required int episode,
+  int? road,
+  String roadId = '',
+}) {
+  final id = stableId.trim();
+  if (id.isEmpty) {
+    throw ArgumentError.value(
+      stableId,
+      'stableId',
+      'History progress key requires a stable episode identity.',
+    );
+  }
+  final scopedRoadId = roadId.trim();
+  if (scopedRoadId.isNotEmpty) {
+    return 'roadId:$scopedRoadId\nstableId:$id';
+  }
+  if (road != null) {
+    return 'road:$road\nstableId:$id';
+  }
+  return 'stableId:$id';
 }
 
 @HiveType(typeId: 2)
@@ -170,9 +207,12 @@ class Progress {
   String episodePageUrl;
 
   /// 订阅规则产出的稳定身份（与域名/顺序无关），作为历史进度匹配主键。
-  /// 存量数据为空时，匹配层回退用 [episodePageUrl] 推导。
   @HiveField(5, defaultValue: '')
   String stableId;
+
+  /// 订阅规则产出的稳定线路身份。持久匹配优先使用 [stableId] + [roadId]。
+  @HiveField(6, defaultValue: '')
+  String roadId;
 
   Duration get progress => Duration(milliseconds: _progressInMilli);
 
@@ -185,6 +225,7 @@ class Progress {
     this.updatedAtMs = 0,
     this.episodePageUrl = '',
     this.stableId = '',
+    this.roadId = '',
   });
 
   int effectiveUpdatedAtMs(DateTime fallback) {

@@ -32,8 +32,7 @@ class _DownloadEpisodeSheetState extends State<DownloadEpisodeSheet> {
       videoPageController.bangumiItem.id,
       videoPageController.currentPlugin.name,
     );
-    final downloadedLegacyUrls = <({String pageUrl, int road})>{};
-    final downloadedStableIds = <({String stableId, int road})>{};
+    final downloadedStableIds = <({String stableId, String roadId})>{};
     if (record != null) {
       for (final entry in record.episodes.entries) {
         if (entry.value.status == DownloadStatus.completed ||
@@ -43,13 +42,7 @@ class _DownloadEpisodeSheetState extends State<DownloadEpisodeSheet> {
           if (stableId.isNotEmpty) {
             downloadedStableIds.add((
               stableId: stableId,
-              road: entry.value.road,
-            ));
-          }
-          if (stableId.isEmpty && entry.value.episodePageUrl.isNotEmpty) {
-            downloadedLegacyUrls.add((
-              pageUrl: entry.value.episodePageUrl,
-              road: entry.value.road,
+              roadId: entry.value.roadId,
             ));
           }
         }
@@ -98,7 +91,6 @@ class _DownloadEpisodeSheetState extends State<DownloadEpisodeSheet> {
                           if (!isDownloadedEpisodeIdentity(
                             identity,
                             downloadedStableIds: downloadedStableIds,
-                            downloadedLegacyUrls: downloadedLegacyUrls,
                           )) {
                             _selectedListIndexes.add(i);
                           }
@@ -137,7 +129,6 @@ class _DownloadEpisodeSheetState extends State<DownloadEpisodeSheet> {
                   final isDownloaded = isDownloadedEpisodeIdentity(
                     identity,
                     downloadedStableIds: downloadedStableIds,
-                    downloadedLegacyUrls: downloadedLegacyUrls,
                   );
                   final isSelected = _selectedListIndexes.contains(listIndex);
                   final identifier = identity.title;
@@ -253,12 +244,6 @@ class _DownloadEpisodeSheetState extends State<DownloadEpisodeSheet> {
 
     for (final listIndex in sortedListIndexes) {
       final identity = currentRoadData.data[listIndex - 1];
-      final episodePageUrl = identity.pageUrl;
-      final identifier = identity.title;
-      final episodeNumber = downloadEpisodeNumberForSelection(
-        listIndex: listIndex,
-        identity: identity,
-      );
 
       downloadController.startDownload(
         bangumiId: bangumiItem.id,
@@ -267,11 +252,8 @@ class _DownloadEpisodeSheetState extends State<DownloadEpisodeSheet> {
             : bangumiItem.name,
         bangumiCover: bangumiItem.images['large'] ?? '',
         pluginName: plugin.name,
-        episodeNumber: episodeNumber,
-        episodeName: identifier,
-        road: widget.road,
-        episodePageUrl: episodePageUrl,
-        stableId: identity.stableId,
+        identity: identity,
+        listIndex: listIndex,
       );
     }
 
@@ -283,24 +265,16 @@ class _DownloadEpisodeSheetState extends State<DownloadEpisodeSheet> {
 
 bool isDownloadedEpisodeIdentity(
   EpisodeIdentity identity, {
-  required Set<({String stableId, int road})> downloadedStableIds,
-  required Set<({String pageUrl, int road})> downloadedLegacyUrls,
+  required Set<({String stableId, String roadId})> downloadedStableIds,
 }) {
-  return (identity.stableId.isNotEmpty &&
-          downloadedStableIds.contains((
-            stableId: identity.stableId,
-            road: identity.roadIndex,
-          ))) ||
-      downloadedLegacyUrls.contains((
-        pageUrl: identity.pageUrl,
-        road: identity.roadIndex,
+  return identity.stableId.isNotEmpty &&
+      downloadedStableIds.contains((
+        stableId: identity.stableId,
+        roadId: identity.roadId,
       ));
 }
 
-int downloadEpisodeNumberForSelection({
-  required int listIndex,
-  required EpisodeIdentity identity,
-}) {
+int? downloadEpisodeOrdinalForSelection(EpisodeIdentity identity) {
   final ordinal = identity.ordinal;
-  return ordinal != null && ordinal > 0 ? ordinal : listIndex;
+  return ordinal != null && ordinal > 0 ? ordinal : null;
 }

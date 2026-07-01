@@ -1,169 +1,107 @@
-# 让订阅规则直接产出 Episode 身份（设计草案）
+# Episode 身份设计
 
-> 目标：不再让播放器从 URL 反推 episode 身份，而是让**订阅规则（`Plugin`）在抓取阶段就产出稳定的 episode 身份**，下游（历史、弹幕、选集、下载）直接消费，不再做"标题正则 + 数组下标 + URL 字符串反查"的事后重建。
+目标：不再让播放器从 URL 反推 episode 身份，而是让订阅规则（`Plugin`）在抓取阶段产出稳定 episode 身份。下游（历史、弹幕、选集、下载、SyncPlay）直接消费规则产物，不再做“标题正则 + 数组下标 + URL 字符串反查”的事后重建。
 
-本文档分四部分：
+## 核心规则
 
-1. 现状链路与痛点
-2. 目标数据结构（图 + 定义）
-3. 字段 ↔ 边界条件映射表
-4. 迁移与兼容
-
----
-
-## 1. 现状链路与痛点
-
-订阅规则只产出两条平行数组（URL 列表 + 标题列表），身份由下游"猜"出来：
+1. `stableId` 是单集身份。它在同一 `(pluginName, bangumiId, roadId)` 作用域内唯一，必须和域名、协议、列表顺序无关。
+2. `roadId` 是线路身份。它用于消除 `roadList` 数组下标重排带来的歧义。
+3. `pageUrl` 只用于发起请求和展示调试信息，不参与身份匹配。
+4. `ordinal` 只用于排序、弹幕集号和显示语义，不参与持久身份匹配。
+5. 新写入的历史、下载、弹幕缓存和 SyncPlay 身份都必须带 `stableId`；有线路歧义时必须同时带 `roadId`。
 
 ```mermaid
 flowchart TD
-    P["订阅规则 Plugin<br/>chapterRoads / chapterResult (XPath)"]
-    R["Road { data: List&lt;String&gt; url, identifier: List&lt;String&gt; title }<br/>※ 无任何身份信息"]
-    E["EpisodeRef（下游事后重建）<br/>sortNumber = 标题正则<br/>historyEpisode = 数组下标<br/>danmakuEpisode = 标题正则 ?? 下标"]
-    H["历史 Progress 匹配<br/>indexOf(pageUrl) / Map&lt;集号, Progress&gt;"]
+    P["Plugin querychapterRoads"]
+    R["Road roadId + List<EpisodeIdentity>"]
+    E["EpisodeRef from EpisodeIdentity"]
+    H["History/Progress stableId + roadId"]
+    D["Download stableId + roadId"]
+    DM["Danmaku cache stableId + roadId"]
+    SP["SyncPlay kazumi-v3 roadId + stableId"]
 
-    P -->|querychapterRoads| R
-    R -->|EpisodeRef.online: 解析标题 + 取下标| E
-    E -->|恢复进度| H
-    H -.->|URL 失配时的补丁| M["normalizeEpisodeUrl<br/>migrateStaleOnlineEpisodePageUrls"]
+    P --> R
+    R --> E
+    E --> H
+    E --> D
+    E --> DM
+    E --> SP
 ```
 
-核心痛点：
+## 数据结构
 
-- **身份非规则给定**：用 `extractEpisodeNumber`（标题正则）+ 数组下标拼凑，标题不规范（"OVA"/"特别篇"）即退化为下标。
-- **回填依赖 URL 字符串相等**：`roadList[i].data.indexOf(pageUrl)`，源站换域名 / URL 带随机参数 / 列表换序就失配，只能靠 `normalizeEpisodeUrl` + `migrateStaleOnlineEpisodePageUrls` 硬撑。
-
-相关现状代码：`lib/plugins/plugins.dart`、`lib/modules/roads/road_module.dart`、`lib/pages/video/video_controller.dart`（`EpisodeRef` / `findEpisodeSelectionByPageUrl`）、`lib/utils/media.dart`（`extractEpisodeNumber`）、`lib/repositories/history_repository.dart`。
-
----
-
-## 2. 目标数据结构
-
-### 2.1 核心思想：身份分两个面
-
-| 面 | 用途 | 谁能产出 | 稳定性来源 |
-| --- | --- | --- | --- |
-| **定位/持久 key**（`stableId`） | 历史进度、选集、跨重抓/重启匹配 | 规则可直接产出 | 源站为该集暴露的稳定标识（slug / id / 相对 path） |
-| **序数**（`ordinal`） | 弹幕集号、排序、显示 | 规则产出，但需对齐外部编号 | 对齐 Bangumi 1..N 官方编号 |
-
-把两者合成一个值是当前 bug 的根源，目标结构显式拆开。
-
-### 2.2 目标类型
-
-`Road.data` 从 `List<String>` 升级为 `List<EpisodeIdentity>`：
+`Road.data` 保存结构化的 `EpisodeIdentity`：
 
 ```dart
-/// 订阅规则在抓取阶段直接产出的单集身份。
-/// 一旦产出即为权威，下游不得再从 URL/标题反推。
 class EpisodeIdentity {
-  /// 定位/持久 key：在 (规则, 番剧, road 作用域) 内唯一且顺序无关。
-  /// 优先级：源站显式 id/slug > 归一化相对 path；URL 噪声/域名不参与。
-  /// 用作历史进度匹配主键。
   final String stableId;
-
-  /// 可访问的请求 URL（归一化后）。仅用于发起请求，不再用于身份匹配。
   final String pageUrl;
-
-  /// 展示标题（原样，保留 "OVA"/"特别篇" 等）。
   final String title;
-
-  /// 集序数：对齐 Bangumi 官方 1..N 的弹幕/排序号；
-  /// 源站无法判定时为 null（下游可显式降级为列表位次，但不写回 stableId）。
   final int? ordinal;
-
-  /// 该集所属的原始线路下标（规则抓取时的 road 次序，顺序无关）。
   final int roadIndex;
-
-  const EpisodeIdentity({
-    required this.stableId,
-    required this.pageUrl,
-    required this.title,
-    required this.roadIndex,
-    this.ordinal,
-  });
+  final String roadId;
 }
-```
 
-```dart
 class Road {
   String name;
-  List<EpisodeIdentity> data; // 由 List<String> 升级而来
-  // identifier 取消：title 已并入 EpisodeIdentity
-
-  Road({required this.name, required this.data});
+  String roadId;
+  List<EpisodeIdentity> data;
 }
 ```
 
-### 2.3 目标链路
+`Plugin` 新增/使用的字段：
 
-```mermaid
-flowchart TD
-    P["订阅规则 Plugin<br/>chapterRoads / chapterResult<br/>+ episodeId (新增可选 XPath)<br/>+ episodeOrdinal (新增可选 XPath)"]
-    R["Road { data: List&lt;EpisodeIdentity&gt; }<br/>stableId / pageUrl / title / ordinal / roadIndex"]
-    E["EpisodeRef 直接由 EpisodeIdentity 填充<br/>（不再正则解析、不再取下标当身份）"]
-    H["历史 Progress 按 stableId 匹配<br/>（不再 indexOf(pageUrl)）"]
+| 字段 | 用途 | 缺省行为 |
+| --- | --- | --- |
+| `episodeId` | 抽取源站稳定单集标识 | 空时用归一化后的相对 path 作为 `stableId` |
+| `episodeTitle` | 抽取展示标题 | 空时使用 `第N集` 占位 |
+| `episodeOrder` | 抽取对齐 Bangumi 的集序号 | 空时保留标题解析作为排序/弹幕降级，不写回身份 |
+| `roadId` | 抽取源站稳定线路标识 | 空时用线路内 episode stableId 集合 hash；仍失败时用 `road-index:N` |
 
-    P -->|querychapterRoads| R
-    R -->|直接映射| E
-    E -->|stableId| H
-```
+`Plugin.querychapterRoads` 是唯一允许从 HTML/XPath/URL fallback 构造身份的边界。若 `episodeId` 与 URL fallback 都无法产出非空 `stableId`，该 episode 不进入 `Road.data`。
 
-```mermaid
-flowchart LR
-    subgraph EpisodeIdentity
-      SID[stableId] --> LOC[定位 / 历史 key]
-      ORD[ordinal] --> DM[弹幕集号 / 排序]
-      URL[pageUrl] --> REQ[请求 URL（仅访问）]
-      TT[title] --> UI[展示]
-    end
-```
+## 下游边界
 
-### 2.4 规则字段（`Plugin`）新增
+历史：
 
-| 字段 | 类型 | 说明 | 缺省行为 |
-| --- | --- | --- | --- |
-| `episodeId` | String(XPath) | 抽取源站稳定标识（如 `@data-id`、slug） | 空 → 回退用归一化相对 path 作为 `stableId` |
-| `episodeOrdinal` | String(XPath) | 抽取可对齐 Bangumi 的集序号 | 空 → 尝试标题解析；再失败 → `ordinal = null` |
+- `PlaybackHistoryIdentity.canRecord` 要求 `stableId` 非空。
+- `History` 和 `Progress` 持久化 `stableId` 与 `roadId`。
+- `History.progresses` 使用稳定字符串 key：优先 `roadId + stableId`，缺少 `roadId` 时才使用受控 road 作用域；集号只保留在 `Progress.episode` 作为展示/排序信息。
+- `findProgress` / `clearProgress` / `getLastWatchingProgress` 只按 `stableId + roadId`、或没有 `roadId` 时按 `stableId + road`、或无线路信息时唯一 `stableId` 命中。
+- 不再用 `episodePageUrl` 或 episode 数组下标回填身份。
 
-> 规则向后兼容：旧规则无新字段时，`stableId = 归一化相对 path`、`ordinal = 标题解析 ?? null`，行为不劣于现状。
+下载：
 
----
+- `DownloadEpisode` 持久化 `stableId` 与 `roadId`。
+- 下载入口接收完整 `EpisodeIdentity`，由控制器内部派生请求 URL、展示标题、ordinal 与 road identity。
+- 下载 key 优先由 `(bangumiId, roadId, stableId)` 生成。
+- 重复下载检测、离线恢复、下载状态图标都按 `stableId + roadId` 匹配。
+- 没有 `stableId` 的下载请求直接拒绝；离线恢复也不会按数值集号兜底。
 
-## 3. 字段 ↔ 边界条件映射
+播放器与选集：
 
-每个字段对应上一轮讨论的具体边界条件，以及降级策略：
+- 在线播放从 `EpisodeIdentity` 构造 `EpisodeRef`，不从 URL/标题反推。
+- 历史恢复和 SyncPlay 切集使用 `stableId + roadId`。
+- `ordinal` 只用于展示、排序和弹幕集号；缺少 `stableId` 时不恢复选集。
 
-| 字段 | 抵御的边界条件 | 不变性要求 | 降级策略 |
-| --- | --- | --- | --- |
-| `stableId` | 域名/协议变更、尾斜杠、query 噪声、列表升降序、增删换序、重抓、重启 | 顺序无关；域名/协议无关；作用域内唯一 | 源站无 id → 用归一化**相对 path**（剥离 baseURL，避免域名迁移失配） |
-| `pageUrl` | session token / 时间戳 query | 仅需"可访问"，不需稳定 | 由 `normalizeEpisodeUrl` 归一化；不参与匹配，故噪声不致命 |
-| `ordinal` | 标题非数字（OVA/特别篇/预告）、多 part（13 上/下）、重号 | 对齐 Bangumi 1..N | 无法判定 → `null`；下游显示用列表位次，但**不写回 stableId** |
-| `title` | —（仅展示） | 原样保留 | 空 → `第N集` 占位 |
-| `roadIndex` | 线路重排 | 标识原始线路，顺序无关 | 缺失 → 取抓取次序 |
-| 作用域键 `(pluginName, bangumiId, entryKind)` | 换规则/换番剧/online↔offline 串档 | 跨命名空间隔离 | 维持现有 `History.scopedKey` |
+弹幕与 SyncPlay：
 
-未被单一字段覆盖、需在策略层处理的边界：
+- 弹幕缓存读写传递 `stableId + roadId`，防止多线路共享集号时串档。
+- SyncPlay 文件名使用 `kazumi-v3:<bangumiId>:<roadId>:<stableId>`；旧格式仅允许解析，不再作为新身份来源。
 
-- **online ↔ offline 一致性**：离线身份当前用下载记录 `episodeNumber`。迁移后离线侧 `stableId` 应复用下载记录里持久化的源站 `stableId`（需在下载时一并落库），从而与在线侧同键互通。
-- **源站完全无稳定信号**（仅位置性 `<a href>` 且 URL 全易变）：这是物理下限——此时 `stableId` 只能退回"归一化相对 path"，若连 path 都易变，则身份不可能稳定，应明确接受"该源不支持跨域名迁移的进度续看"。
+## 不做的事
 
----
+- 不再维护旧历史的 URL 迁移或 pageUrl 回填。
+- 不再从 URL 字符串反查当前 episode。
+- 不再把 `roadList` 数组下标当作稳定线路身份。
+- 不再把标题正则解析结果当作持久 episode 身份。
 
-## 4. 迁移与兼容
-
-1. **数据结构**：`Road.data: List<String> → List<EpisodeIdentity>`，移除 `Road.identifier`（并入 `title`）。改动点集中在 `lib/modules/roads/road_module.dart`、`lib/plugins/plugins.dart`（`querychapterRoads`）、`lib/pages/video/video_controller.dart`（`_resolveOnlineEpisode` / `EpisodeRef`）。
-2. **历史匹配主键切换**：`Progress` 新增 `stableId` 字段（Hive `@HiveField`，`defaultValue: ''`）。匹配优先级：`stableId` > 旧 `episodePageUrl`（兼容存量） > 集号。`findEpisodeSelectionByPageUrl` 改为 `findEpisodeSelectionByStableId`。
-3. **存量历史**：保留 `episodePageUrl` 字段与 `migrateStaleOnlineEpisodePageUrls` 一个版本周期，作为无 `stableId` 老数据的回退；新写入同时填 `stableId`，逐步收敛后再下线 URL 反查补丁。
-4. **规则向后兼容**：见 2.4，旧规则不变可用，行为不劣于现状。
-5. **测试**：扩展 `test/episode_ref_test.dart`，新增 `stableId` 在"换域名 / 列表换序 / 标题非数字"下仍命中同一历史桶的用例。
-
----
-
-### 附：相关源码索引
+## 关键源码
 
 - 规则与抓取：`lib/plugins/plugins.dart`
 - 线路模型：`lib/modules/roads/road_module.dart`
-- 身份重建与 URL 反查：`lib/pages/video/video_controller.dart`
-- URL 归一化：`lib/utils/episode_url.dart`
-- 标题解析：`lib/utils/media.dart`
+- 在线/离线播放选择：`lib/pages/video/video_controller.dart`
 - 历史身份与匹配：`lib/modules/history/history_module.dart`、`lib/repositories/history_repository.dart`
+- 同步历史：`lib/modules/history/history_sync.dart`、`lib/services/sync/history_sync_service.dart`
+- 下载身份：`lib/modules/download/download_module.dart`、`lib/pages/download/download_controller.dart`
+- SyncPlay 身份：`lib/pages/player/controller/player_models.dart`

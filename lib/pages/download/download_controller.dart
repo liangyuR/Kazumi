@@ -313,7 +313,7 @@ abstract class _DownloadController with Store {
 
   DownloadEpisode _cloneEpisode(DownloadEpisode episode) {
     return DownloadEpisode(
-      episode.episodeNumber,
+      episode.ordinal,
       episode.episodeName,
       episode.road,
       episode.status,
@@ -330,6 +330,7 @@ abstract class _DownloadController with Store {
       danmakuData: episode.danmakuData,
       danDanBangumiID: episode.danDanBangumiID,
       stableId: episode.stableId,
+      roadId: episode.roadId,
     );
   }
 
@@ -355,12 +356,14 @@ abstract class _DownloadController with Store {
     String pluginName,
     String stableId, {
     required int road,
+    String roadId = '',
   }) {
     return _repository.getEpisodeByStableId(
       bangumiId,
       pluginName,
       stableId,
       road: road,
+      roadId: roadId,
     );
   }
 
@@ -375,49 +378,6 @@ abstract class _DownloadController with Store {
 
   List<DownloadEpisode> getCompletedEpisodes(int bangumiId, String pluginName) {
     return _repository.getCompletedEpisodes(bangumiId, pluginName);
-  }
-
-  Future<void> migrateEpisodeStableIds({
-    required int bangumiId,
-    required String pluginName,
-    required List<Road> roadList,
-  }) async {
-    final recordKey = '${pluginName}_$bangumiId';
-    final record = _repository.getRecord(recordKey);
-    if (record == null || record.episodes.isEmpty) {
-      return;
-    }
-
-    var changed = false;
-    for (final road in roadList) {
-      for (final identity in road.data) {
-        final stableId = identity.stableId.trim();
-        if (stableId.isEmpty ||
-            downloadEpisodeEntryByStableId(
-                  record,
-                  stableId,
-                  road: identity.roadIndex,
-                ) !=
-                null) {
-          continue;
-        }
-        final legacyEntry = legacyDownloadEpisodeEntryForStableIdBackfill(
-          record,
-          episodePageUrl: identity.pageUrl,
-          road: identity.roadIndex,
-        );
-        if (legacyEntry == null) {
-          continue;
-        }
-        legacyEntry.value.stableId = stableId;
-        changed = true;
-      }
-    }
-
-    if (changed) {
-      await _repository.putRecord(record);
-      _refreshRecord(recordKey);
-    }
   }
 
   /// 弹幕文件路径
@@ -474,15 +434,17 @@ abstract class _DownloadController with Store {
     int episodeNumber, {
     String stableId = '',
     required int road,
+    String roadId = '',
   }) async {
-    final episode = stableId.isNotEmpty
-        ? _repository.getEpisodeByStableId(
+    final episode = stableId.isEmpty
+        ? null
+        : _repository.getEpisodeByStableId(
             bangumiId,
             pluginName,
             stableId,
             road: road,
-          )
-        : _repository.getEpisode(bangumiId, pluginName, episodeNumber);
+            roadId: roadId,
+          );
     if (episode == null) return null;
 
     // 从文件读取
@@ -502,23 +464,23 @@ abstract class _DownloadController with Store {
     int danDanBangumiID, {
     String stableId = '',
     required int road,
+    String roadId = '',
   }) async {
     final recordKey = '${pluginName}_$bangumiId';
     final record = _repository.getRecord(recordKey);
     if (record == null) return;
     MapEntry<int, DownloadEpisode>? episodeEntry;
-    if (stableId.isNotEmpty) {
-      for (final entry in record.episodes.entries) {
-        if (entry.value.stableId == stableId && entry.value.road == road) {
-          episodeEntry = entry;
-          break;
-        }
-      }
-    }
     if (stableId.isEmpty) {
-      episodeEntry ??= record.episodes[episodeNumber] == null
-          ? null
-          : MapEntry(episodeNumber, record.episodes[episodeNumber]!);
+      return;
+    }
+    for (final entry in record.episodes.entries) {
+      final scopedRoadId = roadId.trim();
+      if (entry.value.stableId == stableId &&
+          ((scopedRoadId.isNotEmpty && entry.value.roadId == scopedRoadId) ||
+              (scopedRoadId.isEmpty && entry.value.road == road))) {
+        episodeEntry = entry;
+        break;
+      }
     }
     if (episodeEntry == null) return;
     final episode = episodeEntry.value;
@@ -545,12 +507,21 @@ abstract class _DownloadController with Store {
     required String bangumiName,
     required String bangumiCover,
     required String pluginName,
-    required int episodeNumber,
-    required String episodeName,
-    required int road,
-    required String episodePageUrl,
-    required String stableId,
+    required EpisodeIdentity identity,
+    required int listIndex,
   }) async {
+    final stableId = identity.stableId.trim();
+    if (stableId.trim().isEmpty) {
+      KazumiLogger().w(
+          'DownloadController: skip download without stable episode identity. title=${identity.title}');
+      return;
+    }
+    final ordinal = identity.ordinal;
+    final episodeName = identity.title;
+    final road = identity.roadIndex;
+    final roadId = identity.roadId;
+    final episodePageUrl = identity.pageUrl;
+
     final recordKey = '${pluginName}_$bangumiId';
 
     final record = _repository.getRecord(recordKey) ??
@@ -563,44 +534,20 @@ abstract class _DownloadController with Store {
           DateTime.now(),
         );
 
-    if (stableId.isNotEmpty) {
-      final existingStableEntry =
-          downloadEpisodeEntryByStableId(record, stableId, road: road);
-      if (existingStableEntry != null) {
-        KazumiLogger().i(
-            'DownloadController: episode stableId already exists at position ${existingStableEntry.key}, skipping');
-        return;
-      }
-      final legacyEntry = legacyDownloadEpisodeEntryForStableIdBackfill(
-        record,
-        episodePageUrl: episodePageUrl,
-        road: road,
-      );
-      if (legacyEntry != null) {
-        legacyEntry.value.stableId = stableId;
-        await _repository.putRecord(record);
-        _refreshRecord(recordKey);
-        KazumiLogger().i(
-            'DownloadController: backfilled stableId for existing episode at position ${legacyEntry.key}, skipping');
-        return;
-      }
-    }
-
-    if (stableId.isEmpty && episodePageUrl.isNotEmpty) {
-      final legacyEntry = legacyDownloadEpisodeEntryForStableIdBackfill(
-        record,
-        episodePageUrl: episodePageUrl,
-        road: road,
-      );
-      if (legacyEntry != null) {
-        KazumiLogger().i(
-            'DownloadController: legacy episode URL already exists at position ${legacyEntry.key}, skipping');
-        return;
-      }
+    final existingStableEntry = downloadEpisodeEntryByStableId(
+      record,
+      stableId,
+      road: road,
+      roadId: roadId,
+    );
+    if (existingStableEntry != null) {
+      KazumiLogger().i(
+          'DownloadController: episode stableId already exists at position ${existingStableEntry.key}, skipping');
+      return;
     }
 
     final episode = DownloadEpisode(
-      episodeNumber,
+      ordinal,
       episodeName,
       road,
       DownloadStatus.resolving,
@@ -615,12 +562,13 @@ abstract class _DownloadController with Store {
       0,
       episodePageUrl,
       stableId: stableId,
+      roadId: roadId,
     );
 
     final downloadKey = downloadKeyForEpisodeIdentity(
       record,
-      episodeNumber: episodeNumber,
       road: road,
+      roadId: roadId,
       stableId: stableId,
     );
     record.episodes[downloadKey] = episode;
@@ -686,7 +634,7 @@ abstract class _DownloadController with Store {
       final fullUrl = downloadResolvePageUrl(plugin, request.episodePageUrl);
 
       KazumiLogger().i(
-          'DownloadController: resolving video URL for episode ${episode.episodeNumber} from $fullUrl');
+          'DownloadController: resolving video URL for ${downloadEpisodeDisplayName(episode, fallbackKey: request.downloadKey)} from $fullUrl');
 
       String? m3u8Url;
       try {
@@ -728,7 +676,7 @@ abstract class _DownloadController with Store {
       }
 
       KazumiLogger().i(
-          'DownloadController: resolved M3U8 URL for episode ${episode.episodeNumber}: $m3u8Url');
+          'DownloadController: resolved M3U8 URL for ${downloadEpisodeDisplayName(episode, fallbackKey: request.downloadKey)}: $m3u8Url');
 
       final freshRecord = _repository.getRecord(request.recordKey);
       if (freshRecord == null) return;
@@ -762,12 +710,13 @@ abstract class _DownloadController with Store {
 
       final bool downloadDanmaku =
           GStorage.getSetting(SettingsKeys.downloadDanmaku);
-      if (downloadDanmaku) {
+      final danmakuEpisodeNumber = freshEpisode.ordinal;
+      if (downloadDanmaku && danmakuEpisodeNumber != null) {
         _fetchAndCacheDanmakuAsync(
           request.recordKey,
           request.bangumiId,
           request.downloadKey,
-          freshEpisode.episodeNumber,
+          danmakuEpisodeNumber,
         );
       }
     } finally {
@@ -887,7 +836,7 @@ abstract class _DownloadController with Store {
     _repository.updateEpisode(recordKey, downloadKey, episode);
     _refreshRecord(recordKey);
     KazumiLogger().w(
-        'DownloadController: episode ${episode.episodeNumber} failed: $message');
+        'DownloadController: ${downloadEpisodeDisplayName(episode, fallbackKey: downloadKey)} failed: $message');
   }
 
   Future<void> pauseDownload(
