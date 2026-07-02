@@ -402,7 +402,10 @@ class Plugin {
   /// 用于 [episodeId] / [episodeOrdinal] 这类“可能指向文本或属性”的选择器。
   String _extractNodeValue(dynamic item, String xpath) {
     try {
-      final node = item.queryXPath(xpath).node;
+      final result = item.queryXPath(xpath);
+      final attr = result.attr?.toString().trim() ?? '';
+      if (attr.isNotEmpty) return attr;
+      final node = result.node;
       if (node == null) return '';
       final text = (node.text ?? '').toString().trim();
       if (text.isNotEmpty) return text;

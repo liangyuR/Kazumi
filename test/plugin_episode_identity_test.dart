@@ -26,6 +26,17 @@ void main() {
       expect(roads.single.data.map((episode) => episode.roadId),
           ['source-main', 'source-main']);
     });
+
+    test('extracts explicit roadId from a road node attribute XPath', () {
+      final plugin = _plugin(roadId: './@id');
+
+      final roads = plugin.testQueryChapterRoads(_chapterHtml);
+
+      expect(roads, hasLength(1));
+      expect(roads.single.roadId, 'road-source-main');
+      expect(roads.single.data.map((episode) => episode.roadId),
+          ['road-source-main', 'road-source-main']);
+    });
   });
 }
 
@@ -41,7 +52,7 @@ Plugin _plugin({String roadId = ''}) {
 const _chapterHtml = '''
 <html>
   <body>
-    <div data-kind="road">
+    <div data-kind="road" id="road-source-main">
       <span data-kind="road-id">source-main</span>
       <a href="/play/1">第1集</a>
       <a href="/play/2">第2集</a>

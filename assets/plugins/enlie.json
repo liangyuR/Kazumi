@@ -17,5 +17,6 @@
     "searchResult": "//div[2]/div[1]/a",
     "chapterRoads": "//div/div[2]/div/div[2]/div/div/div",
     "chapterResult": "//a",
+    "roadId": ".//a[contains(@href, '/nid/1.html')]/@href",
     "referer": ""
 }
