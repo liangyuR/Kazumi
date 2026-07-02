@@ -9,6 +9,7 @@ class PlaybackInitParams {
   final String pageUrl;
   final String stableId;
   final String roadId;
+  final String sourceBindingKey;
 
   /// 集数排序号，语义同 EpisodeRef.sortNumber（优先规则 ordinal，缺失时只作展示降级）。
   final int? sortNumber;
@@ -38,6 +39,7 @@ class PlaybackInitParams {
     this.pageUrl = '',
     this.stableId = '',
     this.roadId = '',
+    this.sourceBindingKey = '',
     this.sortNumber,
     this.coverUrl,
     this.bangumiName,

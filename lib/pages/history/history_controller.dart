@@ -33,11 +33,13 @@ abstract class _HistoryController with Store {
     BangumiItem bangumiItem,
     String adapterName, {
     String entryKind = HistoryEntryKind.online,
+    String sourceBindingKey = '',
   }) {
     return _historyRepository.getLastWatchingProgress(
       bangumiItem,
       adapterName,
       entryKind: entryKind,
+      sourceBindingKey: sourceBindingKey,
     );
   }
 
@@ -49,6 +51,7 @@ abstract class _HistoryController with Store {
     String entryKind = HistoryEntryKind.online,
     String stableId = '',
     String roadId = '',
+    String sourceBindingKey = '',
   }) {
     return _historyRepository.findProgress(
       bangumiItem,
@@ -58,6 +61,7 @@ abstract class _HistoryController with Store {
       entryKind: entryKind,
       stableId: stableId,
       roadId: roadId,
+      sourceBindingKey: sourceBindingKey,
     );
   }
 
@@ -74,6 +78,7 @@ abstract class _HistoryController with Store {
     String entryKind = HistoryEntryKind.online,
     String stableId = '',
     String roadId = '',
+    String sourceBindingKey = '',
   }) async {
     await _historyRepository.clearProgress(
       bangumiItem,
@@ -83,6 +88,7 @@ abstract class _HistoryController with Store {
       entryKind: entryKind,
       stableId: stableId,
       roadId: roadId,
+      sourceBindingKey: sourceBindingKey,
     );
     init();
   }

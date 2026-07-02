@@ -1,5 +1,6 @@
 import 'package:hive_ce/hive.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
+import 'package:kazumi/modules/source/source_binding.dart';
 
 part 'history_module.g.dart';
 
@@ -26,6 +27,11 @@ class PlaybackHistoryIdentity {
     this.episodePageUrl = '',
     this.stableId = '',
     this.roadId = '',
+    this.sourceBindingKey = '',
+    this.sourceTitle = '',
+    this.sourceUrl = '',
+    this.sourceConfirmedAt = 0,
+    this.sourceConfirmationKind = SourceConfirmationKind.manual,
   });
 
   final BangumiItem bangumiItem;
@@ -43,6 +49,13 @@ class PlaybackHistoryIdentity {
   /// 订阅规则产出的稳定线路身份，用于消除 roadList 数组下标重排带来的歧义。
   final String roadId;
 
+  /// 用户确认过的源站资源绑定。它定义 [stableId] / [roadId] 的上层作用域。
+  final String sourceBindingKey;
+  final String sourceTitle;
+  final String sourceUrl;
+  final int sourceConfirmedAt;
+  final String sourceConfirmationKind;
+
   bool get canRecord =>
       pluginName.isNotEmpty && episodeNumber > 0 && stableId.trim().isNotEmpty;
 
@@ -56,6 +69,12 @@ class PlaybackHistoryIdentity {
     required String episodePageUrl,
     String stableId = '',
     String roadId = '',
+    SourceBinding? sourceBinding,
+    String sourceBindingKey = '',
+    String sourceTitle = '',
+    String sourceUrl = '',
+    int sourceConfirmedAt = 0,
+    String sourceConfirmationKind = SourceConfirmationKind.manual,
   }) {
     return PlaybackHistoryIdentity(
       bangumiItem: bangumiItem,
@@ -68,6 +87,13 @@ class PlaybackHistoryIdentity {
       episodePageUrl: episodePageUrl,
       stableId: stableId,
       roadId: roadId,
+      sourceBindingKey: sourceBinding?.sourceBindingKey ?? sourceBindingKey,
+      sourceTitle: sourceBinding?.sourceTitle ?? sourceTitle,
+      sourceUrl: sourceBinding?.sourceUrl ?? sourceUrl,
+      sourceConfirmedAt: sourceBinding?.confirmedAt ?? sourceConfirmedAt,
+      sourceConfirmationKind: SourceConfirmationKind.normalize(
+        sourceBinding?.confirmationKind ?? sourceConfirmationKind,
+      ),
     );
   }
 
@@ -80,6 +106,7 @@ class PlaybackHistoryIdentity {
     required String episodePageUrl,
     String stableId = '',
     String roadId = '',
+    SourceBinding? sourceBinding,
   }) {
     return PlaybackHistoryIdentity(
       bangumiItem: bangumiItem,
@@ -91,6 +118,13 @@ class PlaybackHistoryIdentity {
       episodePageUrl: episodePageUrl,
       stableId: stableId,
       roadId: roadId,
+      sourceBindingKey: sourceBinding?.sourceBindingKey ?? '',
+      sourceTitle: sourceBinding?.sourceTitle ?? '',
+      sourceUrl: sourceBinding?.sourceUrl ?? '',
+      sourceConfirmedAt: sourceBinding?.confirmedAt ?? 0,
+      sourceConfirmationKind: SourceConfirmationKind.normalize(
+        sourceBinding?.confirmationKind ?? SourceConfirmationKind.manual,
+      ),
     );
   }
 }
@@ -130,7 +164,29 @@ class History {
   @HiveField(10, defaultValue: '')
   String roadId;
 
-  String get key => scopedKey(adapterName, bangumiItem, entryKind);
+  @HiveField(11, defaultValue: '')
+  String sourceBindingKey;
+
+  @HiveField(12, defaultValue: '')
+  String sourceTitle;
+
+  @HiveField(13, defaultValue: '')
+  String sourceUrl;
+
+  @HiveField(14, defaultValue: 0)
+  int sourceConfirmedAt;
+
+  @HiveField(15, defaultValue: SourceConfirmationKind.manual)
+  String sourceConfirmationKind;
+
+  String get key => scopedKey(
+        adapterName,
+        bangumiItem,
+        entryKind,
+        sourceBindingKey: sourceBindingKey,
+      );
+
+  String get legacyKey => scopedKey(adapterName, bangumiItem, entryKind);
 
   History(
     this.bangumiItem,
@@ -143,20 +199,41 @@ class History {
     this.episodePageUrl = '',
     this.stableId = '',
     this.roadId = '',
+    this.sourceBindingKey = '',
+    this.sourceTitle = '',
+    this.sourceUrl = '',
+    this.sourceConfirmedAt = 0,
+    this.sourceConfirmationKind = SourceConfirmationKind.manual,
   });
 
   static String baseKey(String n, BangumiItem s) => n + s.id.toString();
 
-  static String scopedKey(String n, BangumiItem s, String entryKind) {
-    return '${baseKey(n, s)}::${HistoryEntryKind.normalize(entryKind)}';
+  static String scopedKey(
+    String n,
+    BangumiItem s,
+    String entryKind, {
+    String sourceBindingKey = '',
+  }) {
+    final base = '${baseKey(n, s)}::${HistoryEntryKind.normalize(entryKind)}';
+    final sourceKey = sourceBindingKey.trim();
+    if (sourceKey.isEmpty) {
+      return base;
+    }
+    return '$base::source:${Uri.encodeComponent(sourceKey)}';
   }
 
   static String getKey(
     String n,
     BangumiItem s, {
     String entryKind = HistoryEntryKind.online,
+    String sourceBindingKey = '',
   }) {
-    return scopedKey(n, s, entryKind);
+    return scopedKey(
+      n,
+      s,
+      entryKind,
+      sourceBindingKey: sourceBindingKey,
+    );
   }
 
   @override

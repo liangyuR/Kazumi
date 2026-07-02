@@ -66,6 +66,11 @@ class Plugin {
   String searchList;
   String searchName;
   String searchResult;
+
+  /// 可选：抓取源站“搜索结果资源标识”的 XPath（相对每个 [searchList] 节点）。
+  /// 命中时作为 [SearchItem.sourceId]；为空或未命中时由下游使用
+  /// 归一化后的 [SearchItem.src] 派生 source binding key。
+  String searchId;
   String chapterRoads;
   String chapterResult;
 
@@ -102,6 +107,7 @@ class Plugin {
     required this.searchList,
     required this.searchName,
     required this.searchResult,
+    this.searchId = '',
     required this.chapterRoads,
     required this.chapterResult,
     required this.referer,
@@ -129,6 +135,7 @@ class Plugin {
         searchList: json['searchList'],
         searchName: json['searchName'],
         searchResult: json['searchResult'],
+        searchId: json['searchId'] ?? '',
         chapterRoads: json['chapterRoads'],
         chapterResult: json['chapterResult'],
         roadId: json['roadId'] ?? '',
@@ -159,6 +166,7 @@ class Plugin {
         searchList: '',
         searchName: '',
         searchResult: '',
+        searchId: '',
         chapterRoads: '',
         chapterResult: '',
         roadId: '',
@@ -186,6 +194,7 @@ class Plugin {
     data['searchList'] = searchList;
     data['searchName'] = searchName;
     data['searchResult'] = searchResult;
+    data['searchId'] = searchId;
     data['chapterRoads'] = chapterRoads;
     data['chapterResult'] = chapterResult;
     data['roadId'] = roadId;
@@ -247,10 +256,12 @@ class Plugin {
 
       htmlElement.queryXPath(searchList).nodes.forEach((element) {
         try {
+          final src =
+              element.queryXPath(searchResult).node!.attributes['href'] ?? '';
           SearchItem searchItem = SearchItem(
             name: element.queryXPath(searchName).node!.text?.trim() ?? '',
-            src:
-                element.queryXPath(searchResult).node!.attributes['href'] ?? '',
+            src: src,
+            sourceId: _resolveSearchSourceId(element, src),
           );
           searchItems.add(searchItem);
           KazumiLogger().i(
@@ -356,6 +367,16 @@ class Plugin {
   String _resolveRoadStableId(dynamic roadNode) {
     if (roadId.isNotEmpty) {
       final explicit = _extractNodeValue(roadNode, roadId);
+      if (explicit.isNotEmpty) {
+        return explicit;
+      }
+    }
+    return '';
+  }
+
+  String _resolveSearchSourceId(dynamic searchNode, String src) {
+    if (searchId.isNotEmpty) {
+      final explicit = _extractNodeValue(searchNode, searchId);
       if (explicit.isNotEmpty) {
         return explicit;
       }
@@ -526,9 +547,12 @@ class Plugin {
     var htmlElement = parse(htmlString).documentElement!;
     htmlElement.queryXPath(searchList).nodes.forEach((element) {
       try {
+        final src =
+            element.queryXPath(searchResult).node!.attributes['href'] ?? '';
         SearchItem searchItem = SearchItem(
           name: element.queryXPath(searchName).node!.text?.trim() ?? '',
-          src: element.queryXPath(searchResult).node!.attributes['href'] ?? '',
+          src: src,
+          sourceId: _resolveSearchSourceId(element, src),
         );
         searchItems.add(searchItem);
         KazumiLogger().i(

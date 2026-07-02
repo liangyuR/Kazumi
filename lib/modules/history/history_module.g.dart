@@ -27,13 +27,19 @@ class HistoryAdapter extends TypeAdapter<History> {
       episodePageUrl: fields[8] == null ? '' : fields[8] as String,
       stableId: fields[9] == null ? '' : fields[9] as String,
       roadId: fields[10] == null ? '' : fields[10] as String,
+      sourceBindingKey: fields[11] == null ? '' : fields[11] as String,
+      sourceTitle: fields[12] == null ? '' : fields[12] as String,
+      sourceUrl: fields[13] == null ? '' : fields[13] as String,
+      sourceConfirmedAt: fields[14] == null ? 0 : (fields[14] as num).toInt(),
+      sourceConfirmationKind:
+          fields[15] == null ? 'manual' : fields[15] as String,
     )..progresses = (fields[0] as Map).cast<String, Progress>();
   }
 
   @override
   void write(BinaryWriter writer, History obj) {
     writer
-      ..writeByte(11)
+      ..writeByte(16)
       ..writeByte(0)
       ..write(obj.progresses)
       ..writeByte(1)
@@ -55,7 +61,17 @@ class HistoryAdapter extends TypeAdapter<History> {
       ..writeByte(9)
       ..write(obj.stableId)
       ..writeByte(10)
-      ..write(obj.roadId);
+      ..write(obj.roadId)
+      ..writeByte(11)
+      ..write(obj.sourceBindingKey)
+      ..writeByte(12)
+      ..write(obj.sourceTitle)
+      ..writeByte(13)
+      ..write(obj.sourceUrl)
+      ..writeByte(14)
+      ..write(obj.sourceConfirmedAt)
+      ..writeByte(15)
+      ..write(obj.sourceConfirmationKind);
   }
 
   @override

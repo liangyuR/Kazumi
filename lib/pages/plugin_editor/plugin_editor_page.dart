@@ -28,6 +28,7 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
   final TextEditingController searchListController = TextEditingController();
   final TextEditingController searchNameController = TextEditingController();
   final TextEditingController searchResultController = TextEditingController();
+  final TextEditingController searchIdController = TextEditingController();
   final TextEditingController chapterRoadsController = TextEditingController();
   final TextEditingController chapterResultController = TextEditingController();
   final TextEditingController roadIdController = TextEditingController();
@@ -81,6 +82,7 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
     searchListController.text = plugin.searchList;
     searchNameController.text = plugin.searchName;
     searchResultController.text = plugin.searchResult;
+    searchIdController.text = plugin.searchId;
     chapterRoadsController.text = plugin.chapterRoads;
     chapterResultController.text = plugin.chapterResult;
     roadIdController.text = plugin.roadId;
@@ -116,6 +118,7 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
     searchListController.dispose();
     searchNameController.dispose();
     searchResultController.dispose();
+    searchIdController.dispose();
     chapterRoadsController.dispose();
     chapterResultController.dispose();
     roadIdController.dispose();
@@ -186,6 +189,12 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
                   controller: searchResultController,
                   decoration: const InputDecoration(
                       labelText: 'SearchResult', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: searchIdController,
+                  decoration: const InputDecoration(
+                      labelText: 'SearchId', border: OutlineInputBorder()),
                 ),
                 const SizedBox(height: 20),
                 TextField(
@@ -512,6 +521,7 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
                   searchList: searchListController.text,
                   searchName: searchNameController.text,
                   searchResult: searchResultController.text,
+                  searchId: searchIdController.text,
                   chapterRoads: chapterRoadsController.text,
                   chapterResult: chapterResultController.text,
                   roadId: roadIdController.text,
@@ -547,6 +557,7 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
               plugin.searchList = searchListController.text;
               plugin.searchName = searchNameController.text;
               plugin.searchResult = searchResultController.text;
+              plugin.searchId = searchIdController.text;
               plugin.chapterRoads = chapterRoadsController.text;
               plugin.chapterResult = chapterResultController.text;
               plugin.roadId = roadIdController.text;

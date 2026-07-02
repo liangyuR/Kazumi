@@ -119,8 +119,9 @@ class _PluginTestPageState extends State<PluginTestPage> {
   }
 
   void _toggleItemHtml(int index) {
-    if (_showItemHtmlIdx == index)
+    if (_showItemHtmlIdx == index) {
       return setState(() => _showItemHtmlIdx = null);
+    }
     setState(() => isTesting = true);
     _parseItemHtml(index);
     setState(() {
@@ -386,6 +387,7 @@ class _PluginTestPageState extends State<PluginTestPage> {
   Widget _buildSearchItemCard(SearchItem item, int i, ThemeData theme) {
     final isShowHtml = _showItemHtmlIdx == i;
     final itemHtml = _itemHtmlMap[i] ?? '加载中...';
+    final sourceBindingKey = item.sourceBindingKey(plugin.baseUrl);
 
     return Column(children: [
       Card(
@@ -419,6 +421,18 @@ class _PluginTestPageState extends State<PluginTestPage> {
             Text('链接：${item.src}',
                 style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.getCoreColor(CoreColorType.waiting))),
+            if (item.sourceId.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text('SourceId：${item.sourceId}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.getCoreColor(CoreColorType.waiting))),
+            ],
+            if (sourceBindingKey.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text('SourceBindingKey：$sourceBindingKey',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.getCoreColor(CoreColorType.waiting))),
+            ],
           ]),
         ),
       ),

@@ -13,6 +13,7 @@
     "searchList": "//div/div[3]/ul/li",
     "searchName": "//div/a[2]",
     "searchResult": "//div/a[2]",
+    "searchId": "//div/a[2]/@href",
     "chapterRoads": "//div/div[4]/div/ul",
     "chapterResult": "//li/a",
     "roadId": ".//a[contains(@href, '-1.html')]/@href"

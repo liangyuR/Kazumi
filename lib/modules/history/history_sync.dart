@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/modules/bangumi/bangumi_tag.dart';
 import 'package:kazumi/modules/history/history_module.dart';
+import 'package:kazumi/modules/source/source_binding.dart';
 
 enum HistorySyncOp {
   upsertProgress('upsertProgress'),
@@ -59,6 +60,11 @@ class HistorySyncEvent {
     this.episodePageUrl,
     this.stableId,
     this.roadId,
+    this.sourceBindingKey,
+    this.sourceTitle,
+    this.sourceUrl,
+    this.sourceConfirmedAt,
+    this.sourceConfirmationKind,
     this.carriesWatchState = false,
   });
 
@@ -79,6 +85,11 @@ class HistorySyncEvent {
   final String? episodePageUrl;
   final String? stableId;
   final String? roadId;
+  final String? sourceBindingKey;
+  final String? sourceTitle;
+  final String? sourceUrl;
+  final int? sourceConfirmedAt;
+  final String? sourceConfirmationKind;
   final bool carriesWatchState;
 
   String get version => HistorySyncVersion.of(
@@ -114,6 +125,11 @@ class HistorySyncEvent {
       episodePageUrl: episodePageUrl ?? history.episodePageUrl,
       stableId: stableId,
       roadId: roadId,
+      sourceBindingKey: history.sourceBindingKey,
+      sourceTitle: history.sourceTitle,
+      sourceUrl: history.sourceUrl,
+      sourceConfirmedAt: history.sourceConfirmedAt,
+      sourceConfirmationKind: history.sourceConfirmationKind,
     );
   }
 
@@ -140,6 +156,11 @@ class HistorySyncEvent {
       episodePageUrl: history.episodePageUrl,
       stableId: history.stableId,
       roadId: history.roadId,
+      sourceBindingKey: history.sourceBindingKey,
+      sourceTitle: history.sourceTitle,
+      sourceUrl: history.sourceUrl,
+      sourceConfirmedAt: history.sourceConfirmedAt,
+      sourceConfirmationKind: history.sourceConfirmationKind,
       carriesWatchState: true,
     );
   }
@@ -197,6 +218,11 @@ class HistorySyncEvent {
       episodePageUrl: json['episodePageUrl'] as String?,
       stableId: json['stableId'] as String?,
       roadId: json['roadId'] as String?,
+      sourceBindingKey: json['sourceBindingKey'] as String?,
+      sourceTitle: json['sourceTitle'] as String?,
+      sourceUrl: json['sourceUrl'] as String?,
+      sourceConfirmedAt: (json['sourceConfirmedAt'] as num?)?.toInt(),
+      sourceConfirmationKind: json['sourceConfirmationKind'] as String?,
       carriesWatchState: (json['carriesWatchState'] as bool?) ??
           (json.containsKey('lastSrc') ||
               json.containsKey('lastWatchEpisodeName')),
@@ -224,6 +250,12 @@ class HistorySyncEvent {
       if (episodePageUrl != null) 'episodePageUrl': episodePageUrl,
       if (stableId != null) 'stableId': stableId,
       if (roadId != null) 'roadId': roadId,
+      if (sourceBindingKey != null) 'sourceBindingKey': sourceBindingKey,
+      if (sourceTitle != null) 'sourceTitle': sourceTitle,
+      if (sourceUrl != null) 'sourceUrl': sourceUrl,
+      if (sourceConfirmedAt != null) 'sourceConfirmedAt': sourceConfirmedAt,
+      if (sourceConfirmationKind != null)
+        'sourceConfirmationKind': sourceConfirmationKind,
       if (carriesWatchState) 'carriesWatchState': carriesWatchState,
     };
   }
@@ -450,7 +482,15 @@ class HistorySyncState {
     }
     final entryKind =
         HistoryEntryKind.normalize(event.entryKind ?? HistoryEntryKind.online);
-    final entityKey = History.scopedKey(adapterName, bangumiItem, entryKind);
+    final eventSourceBindingKey = event.sourceBindingKey?.trim() ?? '';
+    final entityKey = event.entityKey != null && event.sourceBindingKey == null
+        ? event.entityKey!
+        : History.scopedKey(
+            adapterName,
+            bangumiItem,
+            entryKind,
+            sourceBindingKey: eventSourceBindingKey,
+          );
     final deletedVersion = deletedVersions[entityKey];
     if (deletedVersion != null &&
         HistorySyncVersion.compare(event.version, deletedVersion) <= 0) {
@@ -469,6 +509,12 @@ class HistorySyncState {
           episodePageUrl: event.episodePageUrl ?? '',
           stableId: event.stableId ?? '',
           roadId: event.roadId ?? '',
+          sourceBindingKey: eventSourceBindingKey,
+          sourceTitle: event.sourceTitle ?? '',
+          sourceUrl: event.sourceUrl ?? '',
+          sourceConfirmedAt: event.sourceConfirmedAt ?? 0,
+          sourceConfirmationKind:
+              event.sourceConfirmationKind ?? SourceConfirmationKind.manual,
         );
 
     final episodePageUrl = event.episodePageUrl ?? '';
@@ -533,7 +579,15 @@ class HistorySyncState {
     }
     final entryKind =
         HistoryEntryKind.normalize(event.entryKind ?? HistoryEntryKind.online);
-    final entityKey = History.scopedKey(adapterName, bangumiItem, entryKind);
+    final eventSourceBindingKey = event.sourceBindingKey?.trim() ?? '';
+    final entityKey = event.entityKey != null && event.sourceBindingKey == null
+        ? event.entityKey!
+        : History.scopedKey(
+            adapterName,
+            bangumiItem,
+            entryKind,
+            sourceBindingKey: eventSourceBindingKey,
+          );
     final deletedVersion = deletedVersions[entityKey];
     if (deletedVersion != null &&
         HistorySyncVersion.compare(event.version, deletedVersion) <= 0) {
@@ -552,6 +606,12 @@ class HistorySyncState {
           episodePageUrl: event.episodePageUrl ?? '',
           stableId: event.stableId ?? '',
           roadId: event.roadId ?? '',
+          sourceBindingKey: eventSourceBindingKey,
+          sourceTitle: event.sourceTitle ?? '',
+          sourceUrl: event.sourceUrl ?? '',
+          sourceConfirmedAt: event.sourceConfirmedAt ?? 0,
+          sourceConfirmationKind:
+              event.sourceConfirmationKind ?? SourceConfirmationKind.manual,
         );
 
     final itemVersion = itemVersions[entityKey];
@@ -572,6 +632,12 @@ class HistorySyncState {
       current.episodePageUrl = event.episodePageUrl ?? '';
       current.stableId = stableId;
       current.roadId = event.roadId ?? '';
+      current.sourceBindingKey = eventSourceBindingKey;
+      current.sourceTitle = event.sourceTitle ?? '';
+      current.sourceUrl = event.sourceUrl ?? '';
+      current.sourceConfirmedAt = event.sourceConfirmedAt ?? 0;
+      current.sourceConfirmationKind =
+          event.sourceConfirmationKind ?? SourceConfirmationKind.manual;
       itemVersions[entityKey] = event.version;
     }
     histories[entityKey] = current;
@@ -790,6 +856,12 @@ class HistorySyncCodec {
       episodePageUrl: json['episodePageUrl'] as String? ?? '',
       stableId: json['stableId'] as String? ?? '',
       roadId: json['roadId'] as String? ?? '',
+      sourceBindingKey: json['sourceBindingKey'] as String? ?? '',
+      sourceTitle: json['sourceTitle'] as String? ?? '',
+      sourceUrl: json['sourceUrl'] as String? ?? '',
+      sourceConfirmedAt: (json['sourceConfirmedAt'] as num?)?.toInt() ?? 0,
+      sourceConfirmationKind: json['sourceConfirmationKind'] as String? ??
+          SourceConfirmationKind.manual,
     );
     history.progresses = {
       for (final entry
@@ -815,6 +887,11 @@ class HistorySyncCodec {
       'episodePageUrl': history.episodePageUrl,
       'stableId': history.stableId,
       'roadId': history.roadId,
+      'sourceBindingKey': history.sourceBindingKey,
+      'sourceTitle': history.sourceTitle,
+      'sourceUrl': history.sourceUrl,
+      'sourceConfirmedAt': history.sourceConfirmedAt,
+      'sourceConfirmationKind': history.sourceConfirmationKind,
       'progresses': {
         for (final entry in history.progresses.entries)
           entry.key.toString(): progressToJson(entry.value),

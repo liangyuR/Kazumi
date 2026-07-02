@@ -171,6 +171,11 @@ class HistorySyncService {
             episodePageUrl: progress.episodePageUrl,
             stableId: progress.stableId,
             roadId: progress.roadId,
+            sourceBindingKey: history.sourceBindingKey,
+            sourceTitle: history.sourceTitle,
+            sourceUrl: history.sourceUrl,
+            sourceConfirmedAt: history.sourceConfirmedAt,
+            sourceConfirmationKind: history.sourceConfirmationKind,
           ),
         );
       }
@@ -191,6 +196,11 @@ class HistorySyncService {
           episodePageUrl: history.episodePageUrl,
           stableId: history.stableId,
           roadId: history.roadId,
+          sourceBindingKey: history.sourceBindingKey,
+          sourceTitle: history.sourceTitle,
+          sourceUrl: history.sourceUrl,
+          sourceConfirmedAt: history.sourceConfirmedAt,
+          sourceConfirmationKind: history.sourceConfirmationKind,
           carriesWatchState: true,
         ),
       );

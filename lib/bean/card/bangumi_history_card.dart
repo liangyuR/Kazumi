@@ -6,6 +6,7 @@ import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/widget/collect_button.dart';
 import 'package:kazumi/modules/download/download_module.dart';
 import 'package:kazumi/modules/history/history_module.dart';
+import 'package:kazumi/modules/source/source_binding.dart';
 import 'package:kazumi/pages/collect/collect_controller.dart';
 import 'package:kazumi/pages/download/download_controller.dart';
 import 'package:kazumi/pages/video/video_controller.dart';
@@ -121,6 +122,21 @@ class _BangumiHistoryCardVState extends State<BangumiHistoryCardV> {
         ? widget.historyItem.bangumiItem.name
         : widget.historyItem.bangumiItem.nameCn;
     videoPageController.src = widget.historyItem.lastSrc;
+    if (widget.historyItem.sourceBindingKey.trim().isNotEmpty) {
+      videoPageController.setSourceBinding(
+        SourceBinding.fromHistoryFields(
+          bangumiItem: widget.historyItem.bangumiItem,
+          pluginName: targetPlugin.name,
+          sourceBindingKey: widget.historyItem.sourceBindingKey,
+          sourceTitle: widget.historyItem.sourceTitle,
+          sourceUrl: widget.historyItem.sourceUrl,
+          confirmedAt: widget.historyItem.sourceConfirmedAt,
+          confirmationKind: widget.historyItem.sourceConfirmationKind,
+        ),
+      );
+    } else {
+      videoPageController.clearSourceBinding();
+    }
     try {
       await videoPageController.queryRoads(
         widget.historyItem.lastSrc,
@@ -137,6 +153,7 @@ class _BangumiHistoryCardVState extends State<BangumiHistoryCardV> {
     final downloadedEpisodes = downloadController.getCompletedEpisodes(
       widget.historyItem.bangumiItem.id,
       widget.historyItem.adapterName,
+      sourceBindingKey: widget.historyItem.sourceBindingKey,
     );
     if (downloadedEpisodes.isEmpty) {
       return false;
@@ -171,6 +188,17 @@ class _BangumiHistoryCardVState extends State<BangumiHistoryCardV> {
       roadId: targetEpisode.roadId,
       road: targetEpisode.road,
       downloadedEpisodes: downloadedEpisodes,
+      sourceBinding: widget.historyItem.sourceBindingKey.trim().isNotEmpty
+          ? SourceBinding.fromHistoryFields(
+              bangumiItem: widget.historyItem.bangumiItem,
+              pluginName: widget.historyItem.adapterName,
+              sourceBindingKey: widget.historyItem.sourceBindingKey,
+              sourceTitle: widget.historyItem.sourceTitle,
+              sourceUrl: widget.historyItem.sourceUrl,
+              confirmedAt: widget.historyItem.sourceConfirmedAt,
+              confirmationKind: widget.historyItem.sourceConfirmationKind,
+            )
+          : null,
     );
     return true;
   }
@@ -203,6 +231,10 @@ class _BangumiHistoryCardVState extends State<BangumiHistoryCardV> {
         ? '第${widget.historyItem.lastWatchEpisode}话'
         : widget.historyItem.lastWatchEpisodeName;
     final String sourceText = historySourceText(widget.historyItem.entryKind);
+    final String sourceTitle = widget.historyItem.sourceTitle.trim();
+    final String sourceDetailText = sourceTitle.isEmpty
+        ? '$sourceText · ${widget.historyItem.adapterName}'
+        : '$sourceText · ${widget.historyItem.adapterName} · $sourceTitle';
 
     return Dismissible(
       key: ValueKey(widget.historyItem.key),
@@ -294,7 +326,7 @@ class _BangumiHistoryCardVState extends State<BangumiHistoryCardV> {
                             const SizedBox(width: 4),
                             Flexible(
                               child: Text(
-                                '$sourceText · ${widget.historyItem.adapterName}',
+                                sourceDetailText,
                                 style: theme.textTheme.bodySmall?.copyWith(
                                   color: colorScheme.onSurfaceVariant,
                                 ),

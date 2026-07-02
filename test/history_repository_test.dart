@@ -198,6 +198,160 @@ void main() {
       expect(historiesBox.values, isEmpty);
       expect(repository.getHistory('plugin', item), isNull);
     });
+
+    test('keeps histories separate by source binding', () async {
+      final repository = _repository(historiesBox, () => privateMode);
+      final item = _item(5);
+
+      await repository.updateHistory(
+        identity: PlaybackHistoryIdentity.online(
+          bangumiItem: item,
+          pluginName: 'plugin',
+          episodeNumber: 1,
+          episodeTitle: 'TV EP1',
+          road: 0,
+          onlineBangumiSrc: 'https://example.com/tv',
+          episodePageUrl: '/tv/1',
+          stableId: 'episode-1',
+          roadId: 'road-main',
+          sourceBindingKey: 'source:/tv',
+          sourceTitle: 'TV',
+          sourceUrl: 'https://example.com/tv',
+          sourceConfirmedAt: 1000,
+        ),
+        progress: const Duration(seconds: 10),
+      );
+
+      await repository.updateHistory(
+        identity: PlaybackHistoryIdentity.online(
+          bangumiItem: item,
+          pluginName: 'plugin',
+          episodeNumber: 1,
+          episodeTitle: 'Movie',
+          road: 0,
+          onlineBangumiSrc: 'https://example.com/movie',
+          episodePageUrl: '/movie',
+          stableId: 'movie',
+          roadId: 'road-main',
+          sourceBindingKey: 'source:/movie',
+          sourceTitle: 'Movie',
+          sourceUrl: 'https://example.com/movie',
+          sourceConfirmedAt: 2000,
+        ),
+        progress: const Duration(seconds: 20),
+      );
+
+      final tv = repository.getHistory(
+        'plugin',
+        item,
+        sourceBindingKey: 'source:/tv',
+      );
+      final movie = repository.getHistory(
+        'plugin',
+        item,
+        sourceBindingKey: 'source:/movie',
+      );
+
+      expect(repository.getHistory('plugin', item), isNull);
+      expect(repository.getAllHistories(), hasLength(2));
+      expect(tv, isNotNull);
+      expect(movie, isNotNull);
+      expect(tv!.key, isNot(movie!.key));
+      expect(tv.sourceTitle, 'TV');
+      expect(tv.sourceUrl, 'https://example.com/tv');
+      expect(tv.sourceConfirmedAt, 1000);
+      expect(movie.sourceTitle, 'Movie');
+      expect(_progressByEpisode(tv, 1).progress.inSeconds, 10);
+      expect(_progressByEpisode(movie, 1).progress.inSeconds, 20);
+
+      expect(
+        repository
+            .findProgress(
+              item,
+              'plugin',
+              1,
+              stableId: 'episode-1',
+              roadId: 'road-main',
+              sourceBindingKey: 'source:/tv',
+            )!
+            .progress
+            .inSeconds,
+        10,
+      );
+      expect(
+        repository.findProgress(
+          item,
+          'plugin',
+          1,
+          stableId: 'episode-1',
+          roadId: 'road-main',
+          sourceBindingKey: 'source:/movie',
+        ),
+        isNull,
+      );
+    });
+
+    test('promotes legacy history after source binding confirmation', () async {
+      final deletedHistories = <History>[];
+      final repository = HistoryRepository(
+        historiesBox: historiesBox,
+        privateModeReader: () => privateMode,
+        progressSyncAppender: _noopHistorySync,
+        deleteSyncAppender: (history) async => deletedHistories.add(history),
+        clearSyncAppender: _noopClearSync,
+      );
+      final item = _item(6);
+
+      await repository.updateHistory(
+        identity: PlaybackHistoryIdentity.online(
+          bangumiItem: item,
+          pluginName: 'plugin',
+          episodeNumber: 1,
+          episodeTitle: 'Legacy EP1',
+          road: 0,
+          onlineBangumiSrc: 'https://example.com/legacy',
+          episodePageUrl: '/legacy/1',
+          stableId: 'episode-1',
+          roadId: 'road-main',
+        ),
+        progress: const Duration(seconds: 10),
+      );
+
+      await repository.updateHistory(
+        identity: PlaybackHistoryIdentity.online(
+          bangumiItem: item,
+          pluginName: 'plugin',
+          episodeNumber: 2,
+          episodeTitle: 'TV EP2',
+          road: 0,
+          onlineBangumiSrc: 'https://example.com/tv',
+          episodePageUrl: '/tv/2',
+          stableId: 'episode-2',
+          roadId: 'road-main',
+          sourceBindingKey: 'source:/tv',
+          sourceTitle: 'TV',
+          sourceUrl: 'https://example.com/tv',
+          sourceConfirmedAt: 2000,
+        ),
+        progress: const Duration(seconds: 20),
+      );
+
+      final promoted = repository.getHistory(
+        'plugin',
+        item,
+        sourceBindingKey: 'source:/tv',
+      );
+
+      expect(repository.getHistory('plugin', item), isNull);
+      expect(historiesBox.values, hasLength(1));
+      expect(promoted, isNotNull);
+      expect(promoted!.sourceTitle, 'TV');
+      expect(promoted.progresses, hasLength(2));
+      expect(_progressByEpisode(promoted, 1).progress.inSeconds, 10);
+      expect(_progressByEpisode(promoted, 2).progress.inSeconds, 20);
+      expect(deletedHistories, hasLength(1));
+      expect(deletedHistories.single.key, History.getKey('plugin', item));
+    });
   });
 
   group('HistoryRepository stable identity matching', () {

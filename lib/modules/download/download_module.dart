@@ -1,4 +1,5 @@
 import 'package:hive_ce/hive.dart';
+import 'package:kazumi/modules/source/source_binding.dart';
 
 part 'download_module.g.dart';
 
@@ -22,7 +23,28 @@ class DownloadRecord {
   @HiveField(5)
   DateTime createdAt;
 
-  String get key => '${pluginName}_$bangumiId';
+  @HiveField(6, defaultValue: '')
+  String sourceBindingKey;
+
+  @HiveField(7, defaultValue: '')
+  String sourceTitle;
+
+  @HiveField(8, defaultValue: '')
+  String sourceUrl;
+
+  @HiveField(9, defaultValue: 0)
+  int sourceConfirmedAt;
+
+  @HiveField(10, defaultValue: SourceConfirmationKind.manual)
+  String sourceConfirmationKind;
+
+  String get key => scopedKey(
+        pluginName,
+        bangumiId,
+        sourceBindingKey: sourceBindingKey,
+      );
+
+  String get legacyKey => scopedKey(pluginName, bangumiId);
 
   DownloadRecord(
     this.bangumiId,
@@ -30,8 +52,26 @@ class DownloadRecord {
     this.bangumiCover,
     this.pluginName,
     this.episodes,
-    this.createdAt,
-  );
+    this.createdAt, {
+    this.sourceBindingKey = '',
+    this.sourceTitle = '',
+    this.sourceUrl = '',
+    this.sourceConfirmedAt = 0,
+    this.sourceConfirmationKind = SourceConfirmationKind.manual,
+  });
+
+  static String scopedKey(
+    String pluginName,
+    int bangumiId, {
+    String sourceBindingKey = '',
+  }) {
+    final base = '${pluginName}_$bangumiId';
+    final sourceKey = sourceBindingKey.trim();
+    if (sourceKey.isEmpty) {
+      return base;
+    }
+    return '$base::source:${Uri.encodeComponent(sourceKey)}';
+  }
 }
 
 const int _maxDownloadKey = 0x7fffffff;
@@ -56,6 +96,7 @@ int downloadKeyForEpisodeIdentity(
   }
   var key = stableDownloadKey(_stableDownloadScopedId(
     id,
+    sourceBindingKey: record.sourceBindingKey,
     road: road,
     roadId: roadId,
   ));
@@ -72,11 +113,16 @@ int downloadKeyForEpisodeIdentity(
 
 String _stableDownloadScopedId(
   String stableId, {
+  required String sourceBindingKey,
   required int road,
   required String roadId,
 }) {
   final scopedRoad = roadId.trim().isNotEmpty ? roadId.trim() : '$road';
-  return '$scopedRoad\n$stableId';
+  final sourceKey = sourceBindingKey.trim();
+  if (sourceKey.isEmpty) {
+    return '$scopedRoad\n$stableId';
+  }
+  return '$sourceKey\n$scopedRoad\n$stableId';
 }
 
 int stableDownloadKey(String stableId) {

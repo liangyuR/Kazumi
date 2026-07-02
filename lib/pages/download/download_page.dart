@@ -5,6 +5,7 @@ import 'package:kazumi/bean/appbar/sys_app_bar.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/modules/download/download_module.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
+import 'package:kazumi/modules/source/source_binding.dart';
 import 'package:kazumi/pages/download/download_controller.dart';
 import 'package:kazumi/pages/video/video_controller.dart';
 import 'package:kazumi/utils/format.dart';
@@ -80,6 +81,9 @@ class _DownloadPageState extends State<DownloadPage> {
           return compare != 0 ? compare : a.key.compareTo(b.key);
         });
       final completedCount = downloadController.completedCount(record);
+      final sourceName = record.sourceTitle.trim().isNotEmpty
+          ? '${record.pluginName} · ${record.sourceTitle}'
+          : record.pluginName;
 
       return Card(
         margin: const EdgeInsets.only(bottom: 12),
@@ -110,7 +114,7 @@ class _DownloadPageState extends State<DownloadPage> {
                 overflow: TextOverflow.ellipsis,
               ),
               subtitle: Text(
-                '来源: ${record.pluginName} · $completedCount/${episodes.length} 已完成',
+                '来源: $sourceName · $completedCount/${episodes.length} 已完成',
                 style: TextStyle(
                   fontSize: 12,
                   color: Theme.of(context).colorScheme.outline,
@@ -124,6 +128,7 @@ class _DownloadPageState extends State<DownloadPage> {
                     downloadController.resumeAllDownloads(
                       record.bangumiId,
                       record.pluginName,
+                      sourceBindingKey: record.sourceBindingKey,
                     );
                     KazumiDialog.showToast(message: '已开始恢复下载');
                   }
@@ -249,6 +254,7 @@ class _DownloadPageState extends State<DownloadPage> {
           record.bangumiId,
           record.pluginName,
           downloadKey,
+          sourceBindingKey: record.sourceBindingKey,
         );
         final speedText = speed > 0 ? ' · ${formatSpeed(speed)}' : '';
         return '${(episode.progressPercent * 100).toStringAsFixed(0)}%  '
@@ -290,6 +296,7 @@ class _DownloadPageState extends State<DownloadPage> {
             record.bangumiId,
             record.pluginName,
             downloadKey,
+            sourceBindingKey: record.sourceBindingKey,
           ),
           tooltip: '暂停',
           visualDensity: VisualDensity.compact,
@@ -302,6 +309,7 @@ class _DownloadPageState extends State<DownloadPage> {
             bangumiId: record.bangumiId,
             pluginName: record.pluginName,
             downloadKey: downloadKey,
+            sourceBindingKey: record.sourceBindingKey,
           ),
           tooltip: '继续',
           visualDensity: VisualDensity.compact,
@@ -314,6 +322,7 @@ class _DownloadPageState extends State<DownloadPage> {
             bangumiId: record.bangumiId,
             pluginName: record.pluginName,
             downloadKey: downloadKey,
+            sourceBindingKey: record.sourceBindingKey,
           ),
           tooltip: '重试',
           visualDensity: VisualDensity.compact,
@@ -328,6 +337,7 @@ class _DownloadPageState extends State<DownloadPage> {
               bangumiId: record.bangumiId,
               pluginName: record.pluginName,
               downloadKey: downloadKey,
+              sourceBindingKey: record.sourceBindingKey,
             );
             KazumiDialog.showToast(message: '已插队优先下载');
           },
@@ -381,9 +391,21 @@ class _DownloadPageState extends State<DownloadPage> {
     final downloadedEpisodes = downloadController.getCompletedEpisodes(
       record.bangumiId,
       record.pluginName,
+      sourceBindingKey: record.sourceBindingKey,
     );
 
     final videoPageController = Modular.get<VideoPageController>();
+    final sourceBinding = record.sourceBindingKey.trim().isNotEmpty
+        ? SourceBinding.fromHistoryFields(
+            bangumiItem: bangumiItem,
+            pluginName: record.pluginName,
+            sourceBindingKey: record.sourceBindingKey,
+            sourceTitle: record.sourceTitle,
+            sourceUrl: record.sourceUrl,
+            confirmedAt: record.sourceConfirmedAt,
+            confirmationKind: record.sourceConfirmationKind,
+          )
+        : null;
     videoPageController.initForOfflinePlayback(
       bangumiItem: bangumiItem,
       pluginName: record.pluginName,
@@ -391,6 +413,7 @@ class _DownloadPageState extends State<DownloadPage> {
       roadId: episode.roadId,
       road: episode.road,
       downloadedEpisodes: downloadedEpisodes,
+      sourceBinding: sourceBinding,
     );
 
     Modular.to.pushNamed('/video/');
@@ -420,6 +443,7 @@ class _DownloadPageState extends State<DownloadPage> {
                 record.bangumiId,
                 record.pluginName,
                 downloadKey,
+                sourceBindingKey: record.sourceBindingKey,
               );
               KazumiDialog.dismiss();
             },
@@ -448,6 +472,7 @@ class _DownloadPageState extends State<DownloadPage> {
               downloadController.deleteRecord(
                 record.bangumiId,
                 record.pluginName,
+                sourceBindingKey: record.sourceBindingKey,
               );
               KazumiDialog.dismiss();
             },

@@ -5,6 +5,7 @@ import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/modules/download/download_module.dart';
 import 'package:kazumi/modules/danmaku/danmaku_module.dart';
 import 'package:kazumi/modules/roads/road_module.dart';
+import 'package:kazumi/modules/source/source_binding.dart';
 import 'package:kazumi/plugins/plugins.dart';
 import 'package:kazumi/plugins/plugins_controller.dart';
 import 'package:kazumi/repositories/download_repository.dart';
@@ -239,8 +240,18 @@ abstract class _DownloadController with Store {
     );
   }
 
-  double getSpeed(int bangumiId, String pluginName, int downloadKey) {
-    final key = '${pluginName}_${bangumiId}_$downloadKey';
+  double getSpeed(
+    int bangumiId,
+    String pluginName,
+    int downloadKey, {
+    String sourceBindingKey = '',
+  }) {
+    final recordKey = _recordKey(
+      bangumiId,
+      pluginName,
+      sourceBindingKey: sourceBindingKey,
+    );
+    final key = '${recordKey}_$downloadKey';
     return _speeds[key] ?? 0.0;
   }
 
@@ -308,6 +319,12 @@ abstract class _DownloadController with Store {
         ),
       ),
       record.createdAt,
+      sourceBindingKey: record.sourceBindingKey,
+      sourceTitle: record.sourceTitle,
+      sourceUrl: record.sourceUrl,
+      sourceConfirmedAt: record.sourceConfirmedAt,
+      sourceConfirmationKind:
+          SourceConfirmationKind.normalize(record.sourceConfirmationKind),
     );
   }
 
@@ -342,13 +359,54 @@ abstract class _DownloadController with Store {
     return null;
   }
 
-  DownloadRecord? getRecord(int bangumiId, String pluginName) {
-    return _repository.getRecordByBangumiId(bangumiId, pluginName);
+  String _recordKey(
+    int bangumiId,
+    String pluginName, {
+    String sourceBindingKey = '',
+  }) {
+    return DownloadRecord.scopedKey(
+      pluginName,
+      bangumiId,
+      sourceBindingKey: sourceBindingKey,
+    );
+  }
+
+  void _applySourceBinding(DownloadRecord record, SourceBinding? binding) {
+    if (binding == null || !binding.isBound) {
+      return;
+    }
+    record.sourceBindingKey = binding.sourceBindingKey;
+    record.sourceTitle = binding.sourceTitle;
+    record.sourceUrl = binding.sourceUrl;
+    record.sourceConfirmedAt = binding.confirmedAt;
+    record.sourceConfirmationKind =
+        SourceConfirmationKind.normalize(binding.confirmationKind);
+  }
+
+  DownloadRecord? getRecord(
+    int bangumiId,
+    String pluginName, {
+    String sourceBindingKey = '',
+  }) {
+    return _repository.getRecordByBangumiId(
+      bangumiId,
+      pluginName,
+      sourceBindingKey: sourceBindingKey,
+    );
   }
 
   DownloadEpisode? getEpisode(
-      int bangumiId, String pluginName, int downloadKey) {
-    return _repository.getEpisode(bangumiId, pluginName, downloadKey);
+    int bangumiId,
+    String pluginName,
+    int downloadKey, {
+    String sourceBindingKey = '',
+  }) {
+    return _repository.getEpisode(
+      bangumiId,
+      pluginName,
+      downloadKey,
+      sourceBindingKey: sourceBindingKey,
+    );
   }
 
   DownloadEpisode? getEpisodeByStableId(
@@ -357,6 +415,7 @@ abstract class _DownloadController with Store {
     String stableId, {
     required int road,
     String roadId = '',
+    String sourceBindingKey = '',
   }) {
     return _repository.getEpisodeByStableId(
       bangumiId,
@@ -364,11 +423,22 @@ abstract class _DownloadController with Store {
       stableId,
       road: road,
       roadId: roadId,
+      sourceBindingKey: sourceBindingKey,
     );
   }
 
-  String? getLocalVideoPath(int bangumiId, String pluginName, int downloadKey) {
-    final episode = _repository.getEpisode(bangumiId, pluginName, downloadKey);
+  String? getLocalVideoPath(
+    int bangumiId,
+    String pluginName,
+    int downloadKey, {
+    String sourceBindingKey = '',
+  }) {
+    final episode = _repository.getEpisode(
+      bangumiId,
+      pluginName,
+      downloadKey,
+      sourceBindingKey: sourceBindingKey,
+    );
     return _downloadManager.getLocalVideoPath(episode);
   }
 
@@ -376,8 +446,16 @@ abstract class _DownloadController with Store {
     return _downloadManager.getLocalVideoPath(episode);
   }
 
-  List<DownloadEpisode> getCompletedEpisodes(int bangumiId, String pluginName) {
-    return _repository.getCompletedEpisodes(bangumiId, pluginName);
+  List<DownloadEpisode> getCompletedEpisodes(
+    int bangumiId,
+    String pluginName, {
+    String sourceBindingKey = '',
+  }) {
+    return _repository.getCompletedEpisodes(
+      bangumiId,
+      pluginName,
+      sourceBindingKey: sourceBindingKey,
+    );
   }
 
   /// 弹幕文件路径
@@ -435,6 +513,7 @@ abstract class _DownloadController with Store {
     String stableId = '',
     required int road,
     String roadId = '',
+    String sourceBindingKey = '',
   }) async {
     final episode = stableId.isEmpty
         ? null
@@ -444,6 +523,7 @@ abstract class _DownloadController with Store {
             stableId,
             road: road,
             roadId: roadId,
+            sourceBindingKey: sourceBindingKey,
           );
     if (episode == null) return null;
 
@@ -465,8 +545,13 @@ abstract class _DownloadController with Store {
     String stableId = '',
     required int road,
     String roadId = '',
+    String sourceBindingKey = '',
   }) async {
-    final recordKey = '${pluginName}_$bangumiId';
+    final recordKey = _recordKey(
+      bangumiId,
+      pluginName,
+      sourceBindingKey: sourceBindingKey,
+    );
     final record = _repository.getRecord(recordKey);
     if (record == null) return;
     MapEntry<int, DownloadEpisode>? episodeEntry;
@@ -509,6 +594,7 @@ abstract class _DownloadController with Store {
     required String pluginName,
     required EpisodeIdentity identity,
     required int listIndex,
+    SourceBinding? sourceBinding,
   }) async {
     final stableId = identity.stableId.trim();
     if (stableId.trim().isEmpty) {
@@ -522,7 +608,13 @@ abstract class _DownloadController with Store {
     final roadId = identity.roadId;
     final episodePageUrl = identity.pageUrl;
 
-    final recordKey = '${pluginName}_$bangumiId';
+    final binding =
+        sourceBinding != null && sourceBinding.isBound ? sourceBinding : null;
+    final recordKey = _recordKey(
+      bangumiId,
+      pluginName,
+      sourceBindingKey: binding?.sourceBindingKey ?? '',
+    );
 
     final record = _repository.getRecord(recordKey) ??
         DownloadRecord(
@@ -532,7 +624,14 @@ abstract class _DownloadController with Store {
           pluginName,
           {},
           DateTime.now(),
+          sourceBindingKey: binding?.sourceBindingKey ?? '',
+          sourceTitle: binding?.sourceTitle ?? '',
+          sourceUrl: binding?.sourceUrl ?? '',
+          sourceConfirmedAt: binding?.confirmedAt ?? 0,
+          sourceConfirmationKind:
+              binding?.confirmationKind ?? SourceConfirmationKind.manual,
         );
+    _applySourceBinding(record, binding);
 
     final existingStableEntry = downloadEpisodeEntryByStableId(
       record,
@@ -840,8 +939,16 @@ abstract class _DownloadController with Store {
   }
 
   Future<void> pauseDownload(
-      int bangumiId, String pluginName, int downloadKey) async {
-    final recordKey = '${pluginName}_$bangumiId';
+    int bangumiId,
+    String pluginName,
+    int downloadKey, {
+    String sourceBindingKey = '',
+  }) async {
+    final recordKey = _recordKey(
+      bangumiId,
+      pluginName,
+      sourceBindingKey: sourceBindingKey,
+    );
     _downloadManager.pause(recordKey, downloadKey);
     _cancelResolve(recordKey, downloadKey);
 
@@ -868,7 +975,7 @@ abstract class _DownloadController with Store {
         if (episode.status == DownloadStatus.downloading ||
             episode.status == DownloadStatus.resolving ||
             episode.status == DownloadStatus.pending) {
-          final recordKey = '${record.pluginName}_${record.bangumiId}';
+          final recordKey = record.key;
           _downloadManager.pause(recordKey, entry.key);
           episode.status = DownloadStatus.paused;
           await _repository.updateEpisode(recordKey, entry.key, episode);
@@ -885,8 +992,13 @@ abstract class _DownloadController with Store {
     required int bangumiId,
     required String pluginName,
     required int downloadKey,
+    String sourceBindingKey = '',
   }) async {
-    final recordKey = '${pluginName}_$bangumiId';
+    final recordKey = _recordKey(
+      bangumiId,
+      pluginName,
+      sourceBindingKey: sourceBindingKey,
+    );
     final record = _repository.getRecord(recordKey);
     if (record == null) return;
     final episode = record.episodes[downloadKey];
@@ -943,19 +1055,34 @@ abstract class _DownloadController with Store {
   }
 
   Future<void> cancelDownload(
-      int bangumiId, String pluginName, int downloadKey) async {
-    final recordKey = '${pluginName}_$bangumiId';
+    int bangumiId,
+    String pluginName,
+    int downloadKey, {
+    String sourceBindingKey = '',
+  }) async {
+    final recordKey = _recordKey(
+      bangumiId,
+      pluginName,
+      sourceBindingKey: sourceBindingKey,
+    );
     _downloadManager.cancel(recordKey, downloadKey);
     _cancelResolve(recordKey, downloadKey);
-    await _downloadManager.deleteEpisodeFiles(
-        bangumiId, pluginName, downloadKey);
+    await _downloadManager.deleteEpisodeFiles(recordKey, downloadKey);
     await _repository.deleteEpisode(recordKey, downloadKey);
     _refreshRecord(recordKey);
     _queueBackgroundNotificationUpdate();
   }
 
-  Future<void> deleteRecord(int bangumiId, String pluginName) async {
-    final recordKey = '${pluginName}_$bangumiId';
+  Future<void> deleteRecord(
+    int bangumiId,
+    String pluginName, {
+    String sourceBindingKey = '',
+  }) async {
+    final recordKey = _recordKey(
+      bangumiId,
+      pluginName,
+      sourceBindingKey: sourceBindingKey,
+    );
     final record = _repository.getRecord(recordKey);
     if (record != null) {
       for (final ep in record.episodes.keys) {
@@ -964,20 +1091,27 @@ abstract class _DownloadController with Store {
       }
     }
     _cancelResolveRecord(recordKey);
-    await _downloadManager.deleteRecordFiles(bangumiId, pluginName);
+    await _downloadManager.deleteRecordFiles(recordKey);
     await _repository.deleteRecord(recordKey);
     _refreshRecord(recordKey);
     _queueBackgroundNotificationUpdate();
   }
 
   Future<void> deleteEpisode(
-      int bangumiId, String pluginName, int downloadKey) async {
-    final recordKey = '${pluginName}_$bangumiId';
+    int bangumiId,
+    String pluginName,
+    int downloadKey, {
+    String sourceBindingKey = '',
+  }) async {
+    final recordKey = _recordKey(
+      bangumiId,
+      pluginName,
+      sourceBindingKey: sourceBindingKey,
+    );
     _downloadManager.cancel(recordKey, downloadKey);
     _speeds.remove('${recordKey}_$downloadKey');
     _cancelResolve(recordKey, downloadKey);
-    await _downloadManager.deleteEpisodeFiles(
-        bangumiId, pluginName, downloadKey);
+    await _downloadManager.deleteEpisodeFiles(recordKey, downloadKey);
     await _repository.deleteEpisode(recordKey, downloadKey);
     _refreshRecord(recordKey);
     _queueBackgroundNotificationUpdate();
@@ -987,8 +1121,13 @@ abstract class _DownloadController with Store {
     required int bangumiId,
     required String pluginName,
     required int downloadKey,
+    String sourceBindingKey = '',
   }) async {
-    final recordKey = '${pluginName}_$bangumiId';
+    final recordKey = _recordKey(
+      bangumiId,
+      pluginName,
+      sourceBindingKey: sourceBindingKey,
+    );
     final record = _repository.getRecord(recordKey);
     if (record == null) return;
     final episode = record.episodes[downloadKey];
@@ -1043,8 +1182,16 @@ abstract class _DownloadController with Store {
     }
   }
 
-  Future<void> resumeAllDownloads(int bangumiId, String pluginName) async {
-    final recordKey = '${pluginName}_$bangumiId';
+  Future<void> resumeAllDownloads(
+    int bangumiId,
+    String pluginName, {
+    String sourceBindingKey = '',
+  }) async {
+    final recordKey = _recordKey(
+      bangumiId,
+      pluginName,
+      sourceBindingKey: sourceBindingKey,
+    );
     final record = _repository.getRecord(recordKey);
     if (record == null) return;
 
@@ -1061,6 +1208,7 @@ abstract class _DownloadController with Store {
         bangumiId: bangumiId,
         pluginName: pluginName,
         downloadKey: entry.key,
+        sourceBindingKey: sourceBindingKey,
       );
     }
 

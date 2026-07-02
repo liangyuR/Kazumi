@@ -582,6 +582,73 @@ void main() {
       expect(record.episodes[specialKey]!.episodeName, '特别篇');
     });
 
+    test('scopes download record keys by source binding', () {
+      final legacy = DownloadRecord(
+        1,
+        'subject',
+        '',
+        'plugin',
+        {},
+        DateTime(2026),
+      );
+      final sourceBound = DownloadRecord(
+        1,
+        'subject',
+        '',
+        'plugin',
+        {},
+        DateTime(2026),
+        sourceBindingKey: 'source:/movie',
+      );
+
+      expect(legacy.key, 'plugin_1');
+      expect(sourceBound.key, isNot(legacy.key));
+      expect(
+          sourceBound.key,
+          DownloadRecord.scopedKey(
+            'plugin',
+            1,
+            sourceBindingKey: 'source:/movie',
+          ));
+      expect(sourceBound.legacyKey, legacy.key);
+    });
+
+    test('source binding participates in new download keys', () {
+      final tv = DownloadRecord(
+        1,
+        'subject',
+        '',
+        'plugin',
+        {},
+        DateTime(2026),
+        sourceBindingKey: 'source:/tv',
+      );
+      final movie = DownloadRecord(
+        1,
+        'subject',
+        '',
+        'plugin',
+        {},
+        DateTime(2026),
+        sourceBindingKey: 'source:/movie',
+      );
+
+      final tvKey = downloadKeyForEpisodeIdentity(
+        tv,
+        road: 0,
+        roadId: 'main',
+        stableId: 'episode-1',
+      );
+      final movieKey = downloadKeyForEpisodeIdentity(
+        movie,
+        road: 0,
+        roadId: 'main',
+        stableId: 'episode-1',
+      );
+
+      expect(tvKey, isNot(movieKey));
+    });
+
     test('uses road-scoped keys for duplicated stableIds', () {
       final record = DownloadRecord(
         1,

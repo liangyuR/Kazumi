@@ -184,8 +184,8 @@ class _VideoPageState extends State<VideoPage>
     _showTabBodyImmediately(locateEpisode: false);
 
     var progress = historyController.lastWatching(
-        videoPageController.bangumiItem,
-        videoPageController.currentPlugin.name);
+        videoPageController.bangumiItem, videoPageController.currentPlugin.name,
+        sourceBindingKey: videoPageController.sourceBindingKey);
     if (progress != null) {
       final selection = findEpisodeSelectionForHistoryProgress(
         videoPageController.roadList,

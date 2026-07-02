@@ -8,6 +8,7 @@ import 'package:kazumi/pages/player/player_controller.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/modules/download/download_module.dart';
 import 'package:kazumi/modules/history/history_module.dart';
+import 'package:kazumi/modules/source/source_binding.dart';
 import 'package:kazumi/repositories/download_repository.dart';
 import 'package:kazumi/services/download/download_manager.dart';
 import 'package:kazumi/services/video_source/services.dart';
@@ -256,6 +257,12 @@ abstract class _VideoPageController with Store {
 
   String src = '';
 
+  String sourceBindingKey = '';
+  String sourceTitle = '';
+  String sourceUrl = '';
+  int sourceConfirmedAt = 0;
+  String sourceConfirmationKind = SourceConfirmationKind.manual;
+
   @observable
   var roadList = ObservableList<Road>();
 
@@ -280,6 +287,39 @@ abstract class _VideoPageController with Store {
 
   StreamSubscription<String>? _logSubscription;
 
+  SourceBinding? get currentSourceBinding {
+    if (sourceBindingKey.trim().isEmpty) {
+      return null;
+    }
+    final pluginName = isOfflineMode ? _offlinePluginName : currentPlugin.name;
+    return SourceBinding.fromHistoryFields(
+      bangumiItem: bangumiItem,
+      pluginName: pluginName,
+      sourceBindingKey: sourceBindingKey,
+      sourceTitle: sourceTitle,
+      sourceUrl: sourceUrl,
+      confirmedAt: sourceConfirmedAt,
+      confirmationKind: sourceConfirmationKind,
+    );
+  }
+
+  void setSourceBinding(SourceBinding binding) {
+    sourceBindingKey = binding.sourceBindingKey;
+    sourceTitle = binding.sourceTitle;
+    sourceUrl = binding.sourceUrl;
+    sourceConfirmedAt = binding.confirmedAt;
+    sourceConfirmationKind =
+        SourceConfirmationKind.normalize(binding.confirmationKind);
+  }
+
+  void clearSourceBinding() {
+    sourceBindingKey = '';
+    sourceTitle = '';
+    sourceUrl = '';
+    sourceConfirmedAt = 0;
+    sourceConfirmationKind = SourceConfirmationKind.manual;
+  }
+
   void initForOfflinePlayback({
     required BangumiItem bangumiItem,
     required String pluginName,
@@ -287,9 +327,15 @@ abstract class _VideoPageController with Store {
     required String roadId,
     required int road,
     required List<DownloadEpisode> downloadedEpisodes,
+    SourceBinding? sourceBinding,
   }) {
     this.bangumiItem = bangumiItem;
     _offlinePluginName = pluginName;
+    if (sourceBinding != null && sourceBinding.isBound) {
+      setSourceBinding(sourceBinding);
+    } else {
+      clearSourceBinding();
+    }
     title =
         bangumiItem.nameCn.isNotEmpty ? bangumiItem.nameCn : bangumiItem.name;
     isOfflineMode = true;
@@ -345,6 +391,7 @@ abstract class _VideoPageController with Store {
     _offlineDisplayRoadToOriginalRoad.clear();
     _offlineOriginalRoadToDisplayRoad.clear();
     _playbackHistoryIdentity = null;
+    clearSourceBinding();
   }
 
   String get offlinePluginName => _offlinePluginName;
@@ -426,6 +473,7 @@ abstract class _VideoPageController with Store {
               roadId: identity.roadId,
               entryKind: identity.entryKind,
               stableId: identity.stableId,
+              sourceBindingKey: identity.sourceBindingKey,
             )
             ?.progress
             .inSeconds ??
@@ -443,6 +491,11 @@ abstract class _VideoPageController with Store {
       episodePageUrl: episode.pageUrl,
       stableId: episode.stableId,
       roadId: episode.roadId,
+      sourceBindingKey: sourceBindingKey,
+      sourceTitle: sourceTitle,
+      sourceUrl: sourceUrl,
+      sourceConfirmedAt: sourceConfirmedAt,
+      sourceConfirmationKind: sourceConfirmationKind,
     );
   }
 
@@ -456,6 +509,7 @@ abstract class _VideoPageController with Store {
       episodePageUrl: episode.pageUrl,
       stableId: episode.stableId,
       roadId: episode.roadId,
+      sourceBinding: currentSourceBinding,
     );
   }
 
@@ -643,6 +697,7 @@ abstract class _VideoPageController with Store {
       pageUrl: resolvedEpisode.pageUrl,
       stableId: resolvedEpisode.stableId,
       roadId: resolvedEpisode.roadId,
+      sourceBindingKey: sourceBindingKey,
       sortNumber: resolvedEpisode.sortNumber,
       httpHeaders: {},
       adBlockerEnabled: false,
@@ -683,6 +738,7 @@ abstract class _VideoPageController with Store {
         stableId: params.stableId,
         road: params.downloadRoad ?? params.currentRoad,
         roadId: params.roadId,
+        sourceBindingKey: params.sourceBindingKey,
       );
       if (session.isActive && danmakuSession.isActive) {
         if (result.hasDanmakus) {
@@ -743,6 +799,7 @@ abstract class _VideoPageController with Store {
         episodeRef.stableId,
         road: episodeRef.originalRoadIndex,
         roadId: episodeRef.roadId,
+        sourceBindingKey: sourceBindingKey,
       );
     }
     if (episodeRef.stableId.isEmpty) {
@@ -795,6 +852,7 @@ abstract class _VideoPageController with Store {
         pageUrl: resolvedEpisode.pageUrl,
         stableId: resolvedEpisode.stableId,
         roadId: resolvedEpisode.roadId,
+        sourceBindingKey: sourceBindingKey,
         sortNumber: resolvedEpisode.sortNumber,
         httpHeaders: {
           'user-agent': currentPlugin.userAgent.isEmpty

@@ -16,7 +16,11 @@ abstract class IDownloadRepository {
   ///
   /// [bangumiId] 番剧 ID
   /// [pluginName] 插件名称
-  DownloadRecord? getRecordByBangumiId(int bangumiId, String pluginName);
+  DownloadRecord? getRecordByBangumiId(
+    int bangumiId,
+    String pluginName, {
+    String sourceBindingKey = '',
+  });
 
   /// 获取指定本地下载 key 的下载信息
   ///
@@ -24,19 +28,27 @@ abstract class IDownloadRepository {
   /// [pluginName] 插件名称
   /// [downloadKey] `DownloadRecord.episodes` 的本地 key；旧记录可等同集数编号
   DownloadEpisode? getEpisode(
-      int bangumiId, String pluginName, int downloadKey);
+    int bangumiId,
+    String pluginName,
+    int downloadKey, {
+    String sourceBindingKey = '',
+  });
 
   /// 获取已完成下载的集数列表
   ///
   /// [bangumiId] 番剧 ID
   /// [pluginName] 插件名称
   /// 返回所有已完成下载的集数
-  List<DownloadEpisode> getCompletedEpisodes(int bangumiId, String pluginName);
+  List<DownloadEpisode> getCompletedEpisodes(
+    int bangumiId,
+    String pluginName, {
+    String sourceBindingKey = '',
+  });
 
   /// 通过订阅规则产出的稳定集身份查找下载记录。
   DownloadEpisode? getEpisodeByStableId(
       int bangumiId, String pluginName, String stableId,
-      {required int road, String roadId = ''});
+      {required int road, String roadId = '', String sourceBindingKey = ''});
 }
 
 class DownloadRepository implements IDownloadRepository {
@@ -207,21 +219,45 @@ class DownloadRepository implements IDownloadRepository {
   }
 
   @override
-  DownloadRecord? getRecordByBangumiId(int bangumiId, String pluginName) {
-    final key = '${pluginName}_$bangumiId';
+  DownloadRecord? getRecordByBangumiId(
+    int bangumiId,
+    String pluginName, {
+    String sourceBindingKey = '',
+  }) {
+    final key = DownloadRecord.scopedKey(
+      pluginName,
+      bangumiId,
+      sourceBindingKey: sourceBindingKey,
+    );
     return getRecord(key);
   }
 
   @override
   DownloadEpisode? getEpisode(
-      int bangumiId, String pluginName, int downloadKey) {
-    final record = getRecordByBangumiId(bangumiId, pluginName);
+    int bangumiId,
+    String pluginName,
+    int downloadKey, {
+    String sourceBindingKey = '',
+  }) {
+    final record = getRecordByBangumiId(
+      bangumiId,
+      pluginName,
+      sourceBindingKey: sourceBindingKey,
+    );
     return record?.episodes[downloadKey];
   }
 
   @override
-  List<DownloadEpisode> getCompletedEpisodes(int bangumiId, String pluginName) {
-    final record = getRecordByBangumiId(bangumiId, pluginName);
+  List<DownloadEpisode> getCompletedEpisodes(
+    int bangumiId,
+    String pluginName, {
+    String sourceBindingKey = '',
+  }) {
+    final record = getRecordByBangumiId(
+      bangumiId,
+      pluginName,
+      sourceBindingKey: sourceBindingKey,
+    );
     if (record == null) return [];
 
     return record.episodes.values
@@ -237,9 +273,14 @@ class DownloadRepository implements IDownloadRepository {
     String stableId, {
     required int road,
     String roadId = '',
+    String sourceBindingKey = '',
   }) {
     if (stableId.isEmpty) return null;
-    final record = getRecordByBangumiId(bangumiId, pluginName);
+    final record = getRecordByBangumiId(
+      bangumiId,
+      pluginName,
+      sourceBindingKey: sourceBindingKey,
+    );
     if (record == null) return null;
     final scopedRoadId = roadId.trim();
     for (final episode in record.episodes.values) {

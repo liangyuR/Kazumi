@@ -261,6 +261,48 @@ void main() {
       expect(_progressByEpisode(offline, 1).progress.inSeconds, 20);
     });
 
+    test('keeps histories separate by source binding', () {
+      final merged = HistorySyncMerger.merge(
+        snapshot: HistorySyncSnapshot.empty(),
+        events: [
+          _upsert(
+            deviceId: 'device-a',
+            seq: 1,
+            updatedAt: 1000,
+            episode: 1,
+            progressMs: 10 * 1000,
+            stableId: 'episode-1',
+            sourceBindingKey: 'source:/tv',
+            sourceTitle: 'TV',
+            sourceUrl: 'https://example.com/tv',
+          ),
+          _upsert(
+            deviceId: 'device-b',
+            seq: 1,
+            updatedAt: 2000,
+            episode: 1,
+            progressMs: 20 * 1000,
+            stableId: 'movie',
+            sourceBindingKey: 'source:/movie',
+            sourceTitle: 'Movie',
+            sourceUrl: 'https://example.com/movie',
+          ),
+        ],
+      );
+
+      expect(merged.histories, hasLength(2));
+      final tv = merged.histories.singleWhere(
+        (history) => history.sourceBindingKey == 'source:/tv',
+      );
+      final movie = merged.histories.singleWhere(
+        (history) => history.sourceBindingKey == 'source:/movie',
+      );
+      expect(tv.sourceTitle, 'TV');
+      expect(movie.sourceTitle, 'Movie');
+      expect(_progressByEpisode(tv, 1).progress.inSeconds, 10);
+      expect(_progressByEpisode(movie, 1).progress.inSeconds, 20);
+    });
+
     test('matches progress by stableId and roadId when page url changes', () {
       final merged = HistorySyncMerger.merge(
         snapshot: HistorySyncSnapshot.empty(),
@@ -693,6 +735,33 @@ void main() {
       expect(restored.first.episodePageUrl, '/episode/1');
       expect(restored.first.stableId, 'episode-1');
     });
+
+    test('round-trips history source binding fields', () {
+      final history = History(
+        _item(1),
+        1,
+        'plugin',
+        DateTime.fromMillisecondsSinceEpoch(1000),
+        'https://example.com/tv',
+        'EP1',
+        stableId: 'episode-1',
+        roadId: 'road-0',
+        sourceBindingKey: 'source:/tv',
+        sourceTitle: 'TV',
+        sourceUrl: 'https://example.com/tv',
+        sourceConfirmedAt: 1000,
+      );
+
+      final restored = HistorySyncCodec.historyFromJson(
+        HistorySyncCodec.historyToJson(history),
+      );
+
+      expect(restored.sourceBindingKey, 'source:/tv');
+      expect(restored.sourceTitle, 'TV');
+      expect(restored.sourceUrl, 'https://example.com/tv');
+      expect(restored.sourceConfirmedAt, 1000);
+      expect(restored.key, history.key);
+    });
   });
 
   group('HistorySyncService', () {
@@ -708,6 +777,10 @@ void main() {
         episodePageUrl: '/offline/1',
         stableId: 'offline-1',
         roadId: 'offline-road',
+        sourceBindingKey: 'source:/offline',
+        sourceTitle: 'Offline Source',
+        sourceUrl: 'file:///offline',
+        sourceConfirmedAt: 1000,
       );
       _putProgress(
         history,
@@ -736,11 +809,14 @@ void main() {
       expect(progressEvent.entryKind, HistoryEntryKind.offline);
       expect(progressEvent.episodePageUrl, '/offline/progress-1');
       expect(progressEvent.stableId, 'offline-progress-1');
+      expect(progressEvent.sourceBindingKey, 'source:/offline');
+      expect(progressEvent.sourceTitle, 'Offline Source');
       expect(progressEvent.updatedAt, 2500);
       expect(progressEvent.progressMs, 20 * 1000);
       expect(watchStateEvent.entryKind, HistoryEntryKind.offline);
       expect(watchStateEvent.episodePageUrl, '/offline/1');
       expect(watchStateEvent.stableId, 'offline-1');
+      expect(watchStateEvent.sourceBindingKey, 'source:/offline');
       expect(watchStateEvent.carriesWatchState, isTrue);
     });
 
@@ -783,6 +859,11 @@ HistorySyncEvent _localStateUpsert({
     lastWatchEpisodeName: history.lastWatchEpisodeName,
     stableId: _progressByEpisode(history, episode).stableId,
     roadId: _progressByEpisode(history, episode).roadId,
+    sourceBindingKey: history.sourceBindingKey,
+    sourceTitle: history.sourceTitle,
+    sourceUrl: history.sourceUrl,
+    sourceConfirmedAt: history.sourceConfirmedAt,
+    sourceConfirmationKind: history.sourceConfirmationKind,
   );
 }
 
@@ -797,6 +878,10 @@ HistorySyncEvent _upsert({
   String episodePageUrl = '',
   String stableId = '',
   String roadId = '',
+  String sourceBindingKey = '',
+  String sourceTitle = '',
+  String sourceUrl = '',
+  int sourceConfirmedAt = 0,
 }) {
   final resolvedStableId = stableId.isEmpty ? 'episode-$episode' : stableId;
   final resolvedRoadId = roadId.isEmpty ? 'road-$road' : roadId;
@@ -811,6 +896,10 @@ HistorySyncEvent _upsert({
     episodePageUrl: episodePageUrl,
     stableId: resolvedStableId,
     roadId: resolvedRoadId,
+    sourceBindingKey: sourceBindingKey,
+    sourceTitle: sourceTitle,
+    sourceUrl: sourceUrl,
+    sourceConfirmedAt: sourceConfirmedAt,
   );
   _putProgress(
     history,
@@ -845,6 +934,10 @@ HistorySyncEvent _watchState({
   required int episode,
   String stableId = '',
   String roadId = '',
+  String sourceBindingKey = '',
+  String sourceTitle = '',
+  String sourceUrl = '',
+  int sourceConfirmedAt = 0,
 }) {
   final resolvedStableId = stableId.isEmpty ? 'episode-$episode' : stableId;
   final resolvedRoadId = roadId.isEmpty ? 'road-0' : roadId;
@@ -857,6 +950,10 @@ HistorySyncEvent _watchState({
     'EP$episode',
     stableId: resolvedStableId,
     roadId: resolvedRoadId,
+    sourceBindingKey: sourceBindingKey,
+    sourceTitle: sourceTitle,
+    sourceUrl: sourceUrl,
+    sourceConfirmedAt: sourceConfirmedAt,
   );
   return HistorySyncEvent.upsertWatchState(
     deviceId: deviceId,

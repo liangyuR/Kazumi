@@ -99,9 +99,8 @@ abstract class IDownloadManager {
   Future<void> resume(DownloadRequest request);
   void cancel(String recordKey, int downloadKey);
   String? getLocalVideoPath(DownloadEpisode? episode);
-  Future<void> deleteEpisodeFiles(
-      int bangumiId, String pluginName, int downloadKey);
-  Future<void> deleteRecordFiles(int bangumiId, String pluginName);
+  Future<void> deleteEpisodeFiles(String recordKey, int downloadKey);
+  Future<void> deleteRecordFiles(String recordKey);
   double getSpeed(String recordKey, int downloadKey);
 }
 
@@ -216,9 +215,8 @@ class DownloadManager implements IDownloadManager {
     return '${appSupport.path}/downloads';
   }
 
-  String getEpisodeDir(
-      String downloadBase, int bangumiId, String pluginName, int downloadKey) {
-    return '$downloadBase/${bangumiId}_$pluginName/$downloadKey';
+  String getEpisodeDir(String downloadBase, String recordKey, int downloadKey) {
+    return '$downloadBase/$recordKey/$downloadKey';
   }
 
   @override
@@ -236,8 +234,6 @@ class DownloadManager implements IDownloadManager {
       _activeTasks[key] = task;
       _runEpisodeDownload(
         task: task,
-        bangumiId: request.bangumiId,
-        pluginName: request.pluginName,
         m3u8Url: request.m3u8Url,
         httpHeaders: request.httpHeaders,
         adBlockerEnabled: request.adBlockerEnabled,
@@ -271,8 +267,6 @@ class DownloadManager implements IDownloadManager {
     _activeTasks[key] = task;
     _runEpisodeDownload(
       task: task,
-      bangumiId: request.bangumiId,
-      pluginName: request.pluginName,
       m3u8Url: request.m3u8Url,
       httpHeaders: request.httpHeaders,
       adBlockerEnabled: request.adBlockerEnabled,
@@ -305,8 +299,6 @@ class DownloadManager implements IDownloadManager {
       _runningCount++;
       _runEpisodeDownload(
         task: task,
-        bangumiId: request.bangumiId,
-        pluginName: request.pluginName,
         m3u8Url: request.m3u8Url,
         httpHeaders: request.httpHeaders,
         adBlockerEnabled: request.adBlockerEnabled,
@@ -345,8 +337,6 @@ class DownloadManager implements IDownloadManager {
       _runningCount++;
       _runEpisodeDownload(
         task: existingTask,
-        bangumiId: request.bangumiId,
-        pluginName: request.pluginName,
         m3u8Url: request.m3u8Url,
         httpHeaders: request.httpHeaders,
         adBlockerEnabled: request.adBlockerEnabled,
@@ -357,8 +347,6 @@ class DownloadManager implements IDownloadManager {
 
   Future<void> _runEpisodeDownload({
     required DownloadTask task,
-    required int bangumiId,
-    required String pluginName,
     required String m3u8Url,
     required Map<String, String> httpHeaders,
     required bool adBlockerEnabled,
@@ -380,8 +368,6 @@ class DownloadManager implements IDownloadManager {
         );
         await _runDirectFileDownload(
           task: task,
-          bangumiId: bangumiId,
-          pluginName: pluginName,
           videoUrl: m3u8Url,
           httpHeaders: httpHeaders,
           episode: episode,
@@ -435,8 +421,7 @@ class DownloadManager implements IDownloadManager {
       }
 
       final base = await _downloadBaseDir;
-      final episodeDir =
-          getEpisodeDir(base, bangumiId, pluginName, task.downloadKey);
+      final episodeDir = getEpisodeDir(base, task.recordKey, task.downloadKey);
       await Directory(episodeDir).create(recursive: true);
       episode.downloadDirectory = episodeDir;
       await _checkStorageSpace(base);
@@ -621,8 +606,6 @@ class DownloadManager implements IDownloadManager {
 
   Future<void> _runDirectFileDownload({
     required DownloadTask task,
-    required int bangumiId,
-    required String pluginName,
     required String videoUrl,
     required Map<String, String> httpHeaders,
     required DownloadEpisode episode,
@@ -630,8 +613,7 @@ class DownloadManager implements IDownloadManager {
     final key = _taskKey(task.recordKey, task.downloadKey);
     try {
       final base = await _downloadBaseDir;
-      final episodeDir =
-          getEpisodeDir(base, bangumiId, pluginName, task.downloadKey);
+      final episodeDir = getEpisodeDir(base, task.recordKey, task.downloadKey);
       await Directory(episodeDir).create(recursive: true);
       episode.downloadDirectory = episodeDir;
       await _checkStorageSpace(base);
@@ -868,20 +850,18 @@ class DownloadManager implements IDownloadManager {
   }
 
   @override
-  Future<void> deleteEpisodeFiles(
-      int bangumiId, String pluginName, int downloadKey) async {
+  Future<void> deleteEpisodeFiles(String recordKey, int downloadKey) async {
     final base = await _downloadBaseDir;
-    final dir =
-        Directory(getEpisodeDir(base, bangumiId, pluginName, downloadKey));
+    final dir = Directory(getEpisodeDir(base, recordKey, downloadKey));
     if (await dir.exists()) {
       await dir.delete(recursive: true);
     }
   }
 
   @override
-  Future<void> deleteRecordFiles(int bangumiId, String pluginName) async {
+  Future<void> deleteRecordFiles(String recordKey) async {
     final base = await _downloadBaseDir;
-    final dir = Directory('$base/${bangumiId}_$pluginName');
+    final dir = Directory('$base/$recordKey');
     if (await dir.exists()) {
       await dir.delete(recursive: true);
     }

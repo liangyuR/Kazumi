@@ -145,6 +145,7 @@ abstract class _PlayerDanmakuController with Store {
     String stableId = '',
     required int road,
     String roadId = '',
+    String sourceBindingKey = '',
   }) async {
     if (isLocalPlayback()) {
       return await _fetchCachedDanmaku(
@@ -154,6 +155,7 @@ abstract class _PlayerDanmakuController with Store {
         stableId: stableId,
         road: road,
         roadId: roadId,
+        sourceBindingKey: sourceBindingKey,
       );
     }
     return await _fetchDanDanmakuByBgmBangumiID(
@@ -203,6 +205,7 @@ abstract class _PlayerDanmakuController with Store {
     String stableId = '',
     required int road,
     String roadId = '',
+    String sourceBindingKey = '',
   }) async {
     KazumiLogger().i(
         'PlayerController: attempting to load cached danmaku for episode $episode');
@@ -216,6 +219,7 @@ abstract class _PlayerDanmakuController with Store {
         stableId: stableId,
         road: road,
         roadId: roadId,
+        sourceBindingKey: sourceBindingKey,
       );
 
       if (cachedDanmakus != null && cachedDanmakus.isNotEmpty) {
@@ -238,7 +242,10 @@ abstract class _PlayerDanmakuController with Store {
                   .i('PlayerController: fetched ${res.length} danmakus online');
               _saveDanmakuToCache(downloadController, bangumiId, pluginName,
                   episode, res, nextBangumiID,
-                  stableId: stableId, road: road, roadId: roadId);
+                  stableId: stableId,
+                  road: road,
+                  roadId: roadId,
+                  sourceBindingKey: sourceBindingKey);
             }
             return DanmakuLoadResult.success(
               danmakus: res,
@@ -273,6 +280,7 @@ abstract class _PlayerDanmakuController with Store {
     String stableId = '',
     required int road,
     String roadId = '',
+    String sourceBindingKey = '',
   }) {
     try {
       downloadController.updateCachedDanmakus(
@@ -284,6 +292,7 @@ abstract class _PlayerDanmakuController with Store {
         stableId: stableId,
         road: road,
         roadId: roadId,
+        sourceBindingKey: sourceBindingKey,
       );
       KazumiLogger()
           .i('PlayerController: saved ${danmakus.length} danmakus to cache');

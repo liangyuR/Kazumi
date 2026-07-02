@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/pages/info/info_controller.dart';
+import 'package:kazumi/pages/history/history_controller.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/plugins/plugins_controller.dart';
@@ -11,6 +12,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:kazumi/services/plugin/plugin_search_service.dart';
 import 'package:kazumi/pages/collect/collect_controller.dart';
 import 'package:kazumi/bean/widget/error_widget.dart';
+import 'package:kazumi/modules/history/history_module.dart';
+import 'package:kazumi/modules/search/plugin_search_module.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:kazumi/services/plugin/captcha_verification_service.dart';
@@ -36,6 +39,7 @@ class _SourceSheetState extends State<SourceSheet>
   final VideoPageController videoPageController =
       Modular.get<VideoPageController>();
   final CollectController collectController = Modular.get<CollectController>();
+  final HistoryController historyController = Modular.get<HistoryController>();
   final PluginsController pluginsController = Modular.get<PluginsController>();
   late String keyword;
 
@@ -55,6 +59,7 @@ class _SourceSheetState extends State<SourceSheet>
         : widget.infoController.bangumiItem.nameCn;
     pluginSearchService =
         PluginSearchService(infoController: widget.infoController);
+    historyController.init();
     pluginSearchService?.queryAllSource(keyword);
     super.initState();
   }
@@ -332,8 +337,10 @@ class _SourceSheetState extends State<SourceSheet>
         ],
       );
     }
+    final currentBindingHeader = buildCurrentBindingHeader(plugin);
     return Column(
       children: [
+        if (currentBindingHeader != null) currentBindingHeader,
         Expanded(
           child: ListView(
             children: cardList,
@@ -342,6 +349,178 @@ class _SourceSheetState extends State<SourceSheet>
         if (cardList.isNotEmpty) showSupplementarySearchEntry(plugin.name),
       ],
     );
+  }
+
+  Widget? buildCurrentBindingHeader(Plugin plugin) {
+    if (!_isCurrentBindingForPlugin(plugin)) {
+      return null;
+    }
+    final sourceTitle = videoPageController.sourceTitle.trim();
+    if (sourceTitle.isEmpty) {
+      return null;
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+      child: Card(
+        elevation: 0,
+        child: ListTile(
+          dense: true,
+          leading: Icon(
+            Icons.check_circle_rounded,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          title: const Text('当前选择'),
+          subtitle: Text(
+            sourceTitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: IconButton(
+            tooltip: '清除',
+            icon: const Icon(Icons.close_rounded),
+            onPressed: () {
+              setState(videoPageController.clearSourceBinding);
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  bool _isCurrentBindingForPlugin(Plugin plugin) {
+    if (videoPageController.sourceBindingKey.trim().isEmpty) {
+      return false;
+    }
+    try {
+      return videoPageController.bangumiItem.id ==
+              widget.infoController.bangumiItem.id &&
+          videoPageController.currentPlugin.name == plugin.name;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool _isCurrentBinding(Plugin plugin, String sourceBindingKey) {
+    return _isCurrentBindingForPlugin(plugin) &&
+        sourceBindingKey.isNotEmpty &&
+        sourceBindingKey == videoPageController.sourceBindingKey;
+  }
+
+  History? _lastSourceHistory(Plugin plugin) {
+    final matches = historyController.histories
+        .where((history) =>
+            history.bangumiItem.id == widget.infoController.bangumiItem.id &&
+            history.adapterName == plugin.name &&
+            history.sourceBindingKey.trim().isNotEmpty)
+        .toList()
+      ..sort((a, b) => b.lastWatchTime.compareTo(a.lastWatchTime));
+    return matches.isEmpty ? null : matches.first;
+  }
+
+  bool _isTitleMismatch(String sourceTitle) {
+    final source = _normalizedTitle(sourceTitle);
+    final primary = _normalizedTitle(keyword);
+    if (source.isEmpty || primary.isEmpty) {
+      return false;
+    }
+    if (source.contains(primary) || primary.contains(source)) {
+      return false;
+    }
+    return !widget.infoController.bangumiItem.alias.map(_normalizedTitle).any(
+        (alias) =>
+            alias.isNotEmpty &&
+            (source.contains(alias) || alias.contains(source)));
+  }
+
+  String _normalizedTitle(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll(RegExp(r'[\s　!！?？:：,，.。·・~～\-—_（）()【】\[\]]'), '');
+  }
+
+  Widget buildSearchItemCard(Plugin plugin, SearchItem searchItem) {
+    final sourceBindingKey = searchItem.sourceBindingKey(plugin.baseUrl);
+    final isCurrent = _isCurrentBinding(plugin, sourceBindingKey);
+    final lastHistory = _lastSourceHistory(plugin);
+    final isLastUsed =
+        !isCurrent && lastHistory?.sourceBindingKey == sourceBindingKey;
+    final titleMismatch = _isTitleMismatch(searchItem.name);
+    final notes = <String>[
+      if (isCurrent) '当前选择',
+      if (isLastUsed) '上次使用',
+      if (titleMismatch) '标题可能不是当前条目',
+    ];
+
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(left: 10, right: 10, top: 10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => openSearchItem(plugin, searchItem),
+        child: ListTile(
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          leading: Icon(
+            isCurrent
+                ? Icons.check_circle_rounded
+                : isLastUsed
+                    ? Icons.history_rounded
+                    : titleMismatch
+                        ? Icons.info_outline_rounded
+                        : Icons.play_circle_outline_rounded,
+            color: isCurrent
+                ? Theme.of(context).colorScheme.primary
+                : titleMismatch
+                    ? Theme.of(context).colorScheme.outline
+                    : null,
+          ),
+          title: Text(
+            searchItem.name,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: notes.isEmpty
+              ? null
+              : Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    notes.join(' · '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> openSearchItem(Plugin plugin, SearchItem searchItem) async {
+    KazumiDialog.showLoading(
+      msg: '获取中',
+      barrierDismissible: isDesktop(),
+      onDismiss: () {
+        videoPageController.cancelQueryRoads();
+      },
+    );
+    videoPageController.bangumiItem = widget.infoController.bangumiItem;
+    videoPageController.currentPlugin = plugin;
+    videoPageController.title = searchItem.name;
+    videoPageController.src = searchItem.src;
+    videoPageController.setSourceBinding(
+      searchItem.toSourceBinding(
+        bangumiItem: widget.infoController.bangumiItem,
+        pluginName: plugin.name,
+        baseUrl: plugin.baseUrl,
+      ),
+    );
+    try {
+      await videoPageController.queryRoads(searchItem.src, plugin.name);
+      KazumiDialog.dismiss();
+      Modular.to.pushNamed('/video/');
+    } catch (_) {
+      KazumiLogger().w("PluginSearchService: failed to query video playlist");
+      KazumiDialog.dismiss();
+    }
   }
 
   /// 构建结果列表底部补充检索入口，便于已有结果不准确时换用别名或手动检索关键词
@@ -373,8 +552,8 @@ class _SourceSheetState extends State<SourceSheet>
                   TextButton(
                     style: TextButton.styleFrom(
                       minimumSize: Size.zero,
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 10),
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       visualDensity: VisualDensity.compact,
                       textStyle: Theme.of(context).textTheme.bodySmall,
@@ -385,8 +564,8 @@ class _SourceSheetState extends State<SourceSheet>
                   TextButton(
                     style: TextButton.styleFrom(
                       minimumSize: Size.zero,
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 10),
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       visualDensity: VisualDensity.compact,
                       textStyle: Theme.of(context).textTheme.bodySmall,
@@ -561,44 +740,7 @@ class _SourceSheetState extends State<SourceSheet>
                         in widget.infoController.pluginSearchResponseList) {
                       if (searchResponse.pluginName == plugin.name) {
                         for (var searchItem in searchResponse.data) {
-                          cardList.add(
-                            Card(
-                              elevation: 0,
-                              margin: const EdgeInsets.only(
-                                  left: 10, right: 10, top: 10),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(12),
-                                onTap: () async {
-                                  KazumiDialog.showLoading(
-                                    msg: '获取中',
-                                    barrierDismissible: isDesktop(),
-                                    onDismiss: () {
-                                      videoPageController.cancelQueryRoads();
-                                    },
-                                  );
-                                  videoPageController.bangumiItem =
-                                      widget.infoController.bangumiItem;
-                                  videoPageController.currentPlugin = plugin;
-                                  videoPageController.title = searchItem.name;
-                                  videoPageController.src = searchItem.src;
-                                  try {
-                                    await videoPageController.queryRoads(
-                                        searchItem.src, plugin.name);
-                                    KazumiDialog.dismiss();
-                                    Modular.to.pushNamed('/video/');
-                                  } catch (_) {
-                                    KazumiLogger().w(
-                                        "PluginSearchService: failed to query video playlist");
-                                    KazumiDialog.dismiss();
-                                  }
-                                },
-                                child: Padding(
-                                  padding: const EdgeInsets.all(20),
-                                  child: Text(searchItem.name),
-                                ),
-                              ),
-                            ),
-                          );
+                          cardList.add(buildSearchItemCard(plugin, searchItem));
                         }
                       }
                     }

@@ -15,6 +15,7 @@
     "searchList": "//div[1]/div[2]/div/div/div[2]/div/div",
     "searchName": "//div[2]/div[1]/a",
     "searchResult": "//div[2]/div[1]/a",
+    "searchId": "//div[2]/div[1]/a/@href",
     "chapterRoads": "//div/div[2]/div/div[2]/div/div/div",
     "chapterResult": "//a",
     "roadId": ".//a[contains(@href, '/nid/1.html')]/@href",

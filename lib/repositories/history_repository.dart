@@ -2,6 +2,7 @@ import 'package:hive_ce/hive.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/modules/history/history_module.dart';
+import 'package:kazumi/modules/source/source_binding.dart';
 import 'package:kazumi/services/sync/history_sync_service.dart';
 import 'package:kazumi/services/logging/logger.dart';
 
@@ -36,6 +37,7 @@ abstract class IHistoryRepository {
     String adapterName,
     BangumiItem bangumiItem, {
     String entryKind = HistoryEntryKind.online,
+    String sourceBindingKey = '',
   });
 
   /// 更新或创建历史记录
@@ -56,6 +58,7 @@ abstract class IHistoryRepository {
     BangumiItem bangumiItem,
     String adapterName, {
     String entryKind = HistoryEntryKind.online,
+    String sourceBindingKey = '',
   });
 
   /// 查找特定集数的观看进度
@@ -72,6 +75,7 @@ abstract class IHistoryRepository {
     String entryKind = HistoryEntryKind.online,
     String stableId = '',
     String roadId = '',
+    String sourceBindingKey = '',
   });
 
   /// 删除历史记录
@@ -92,6 +96,7 @@ abstract class IHistoryRepository {
     String entryKind = HistoryEntryKind.online,
     String stableId = '',
     String roadId = '',
+    String sourceBindingKey = '',
   });
 
   /// 清空所有历史记录
@@ -169,6 +174,8 @@ class HistoryRepository implements IHistoryRepository {
       final byKey = <String, History>{};
       for (final history in _historiesBox.values) {
         history.entryKind = HistoryEntryKind.normalize(history.entryKind);
+        history.sourceConfirmationKind =
+            SourceConfirmationKind.normalize(history.sourceConfirmationKind);
         if (history.stableId.trim().isEmpty) {
           continue;
         }
@@ -200,9 +207,15 @@ class HistoryRepository implements IHistoryRepository {
     String adapterName,
     BangumiItem bangumiItem, {
     String entryKind = HistoryEntryKind.online,
+    String sourceBindingKey = '',
   }) {
     try {
-      return _findHistory(adapterName, bangumiItem, entryKind);
+      return _findHistory(
+        adapterName,
+        bangumiItem,
+        entryKind,
+        sourceBindingKey: sourceBindingKey,
+      );
     } catch (e, stackTrace) {
       KazumiLogger().e(
         'GStorage: get history failed. bangumi=${bangumiItem.name}',
@@ -234,24 +247,45 @@ class HistoryRepository implements IHistoryRepository {
       final now = DateTime.now();
       final nowMs = now.millisecondsSinceEpoch;
 
-      // 获取或创建历史记录
+      // 获取或创建历史记录。带 source binding 的确认写入可以把旧 legacy
+      // bucket 提升到 scoped key，但不会按 URL 批量猜测迁移。
       var history = _findHistory(
-            adapterName,
-            bangumiItem,
-            identity.entryKind,
-          ) ??
-          History(
-            bangumiItem,
-            episode,
-            adapterName,
-            now,
-            identity.onlineBangumiSrc,
-            identity.episodeTitle,
-            entryKind: identity.entryKind,
-            episodePageUrl: identity.episodePageUrl,
-            stableId: identity.stableId,
-            roadId: identity.roadId,
-          );
+        adapterName,
+        bangumiItem,
+        identity.entryKind,
+        sourceBindingKey: identity.sourceBindingKey,
+      );
+      String? promotedLegacyKey;
+      History? promotedLegacySnapshot;
+      if (history == null && identity.sourceBindingKey.trim().isNotEmpty) {
+        final legacyHistory = _findHistory(
+          adapterName,
+          bangumiItem,
+          identity.entryKind,
+        );
+        if (legacyHistory != null) {
+          promotedLegacyKey = legacyHistory.key;
+          promotedLegacySnapshot = _snapshotHistory(legacyHistory);
+          history = legacyHistory;
+        }
+      }
+      history ??= History(
+        bangumiItem,
+        episode,
+        adapterName,
+        now,
+        identity.onlineBangumiSrc,
+        identity.episodeTitle,
+        entryKind: identity.entryKind,
+        episodePageUrl: identity.episodePageUrl,
+        stableId: identity.stableId,
+        roadId: identity.roadId,
+        sourceBindingKey: identity.sourceBindingKey,
+        sourceTitle: identity.sourceTitle,
+        sourceUrl: identity.sourceUrl,
+        sourceConfirmedAt: identity.sourceConfirmedAt,
+        sourceConfirmationKind: identity.sourceConfirmationKind,
+      );
 
       // 更新历史记录
       history.lastWatchEpisode = episode;
@@ -266,6 +300,20 @@ class HistoryRepository implements IHistoryRepository {
       history.episodePageUrl = identity.episodePageUrl;
       history.stableId = identity.stableId;
       history.roadId = identity.roadId;
+      if (identity.sourceBindingKey.trim().isNotEmpty) {
+        history.sourceBindingKey = identity.sourceBindingKey;
+        if (identity.sourceTitle.isNotEmpty) {
+          history.sourceTitle = identity.sourceTitle;
+        }
+        if (identity.sourceUrl.isNotEmpty) {
+          history.sourceUrl = identity.sourceUrl;
+        }
+        if (identity.sourceConfirmedAt > 0) {
+          history.sourceConfirmedAt = identity.sourceConfirmedAt;
+        }
+        history.sourceConfirmationKind =
+            SourceConfirmationKind.normalize(identity.sourceConfirmationKind);
+      }
 
       // 更新观看进度
       final progressMatch = _HistoryEpisodeMatcher.find(
@@ -305,6 +353,12 @@ class HistoryRepository implements IHistoryRepository {
 
       // 保存到存储
       await _historiesBox.put(history.key, history);
+      if (promotedLegacyKey != null && promotedLegacyKey != history.key) {
+        await _historiesBox.delete(promotedLegacyKey);
+        if (promotedLegacySnapshot != null) {
+          await _deleteSyncAppender(promotedLegacySnapshot);
+        }
+      }
       await _progressSyncAppender(
         history: history,
         episode: episode,
@@ -329,9 +383,15 @@ class HistoryRepository implements IHistoryRepository {
     BangumiItem bangumiItem,
     String adapterName, {
     String entryKind = HistoryEntryKind.online,
+    String sourceBindingKey = '',
   }) {
     try {
-      final history = _findHistory(adapterName, bangumiItem, entryKind);
+      final history = _findHistory(
+        adapterName,
+        bangumiItem,
+        entryKind,
+        sourceBindingKey: sourceBindingKey,
+      );
       if (history == null) {
         return null;
       }
@@ -361,9 +421,15 @@ class HistoryRepository implements IHistoryRepository {
     String entryKind = HistoryEntryKind.online,
     String stableId = '',
     String roadId = '',
+    String sourceBindingKey = '',
   }) {
     try {
-      final history = _findHistory(adapterName, bangumiItem, entryKind);
+      final history = _findHistory(
+        adapterName,
+        bangumiItem,
+        entryKind,
+        sourceBindingKey: sourceBindingKey,
+      );
       if (history == null) {
         return null;
       }
@@ -409,9 +475,15 @@ class HistoryRepository implements IHistoryRepository {
     String entryKind = HistoryEntryKind.online,
     String stableId = '',
     String roadId = '',
+    String sourceBindingKey = '',
   }) async {
     try {
-      final history = _findHistory(adapterName, bangumiItem, entryKind);
+      final history = _findHistory(
+        adapterName,
+        bangumiItem,
+        entryKind,
+        sourceBindingKey: sourceBindingKey,
+      );
       final progressMatch = history == null
           ? null
           : _HistoryEpisodeMatcher.find(
@@ -477,20 +549,39 @@ class HistoryRepository implements IHistoryRepository {
   }
 
   History? _findHistory(
-    String adapterName,
-    BangumiItem bangumiItem,
-    String entryKind,
-  ) {
+      String adapterName, BangumiItem bangumiItem, String entryKind,
+      {String sourceBindingKey = ''}) {
     final normalizedEntryKind = HistoryEntryKind.normalize(entryKind);
     final history = _historiesBox.get(
       History.getKey(
         adapterName,
         bangumiItem,
         entryKind: normalizedEntryKind,
+        sourceBindingKey: sourceBindingKey,
       ),
     );
     return history?.stableId.trim().isEmpty == true ? null : history;
   }
+}
+
+History _snapshotHistory(History source) {
+  return History(
+    source.bangumiItem,
+    source.lastWatchEpisode,
+    source.adapterName,
+    source.lastWatchTime,
+    source.lastSrc,
+    source.lastWatchEpisodeName,
+    entryKind: source.entryKind,
+    episodePageUrl: source.episodePageUrl,
+    stableId: source.stableId,
+    roadId: source.roadId,
+    sourceBindingKey: source.sourceBindingKey,
+    sourceTitle: source.sourceTitle,
+    sourceUrl: source.sourceUrl,
+    sourceConfirmedAt: source.sourceConfirmedAt,
+    sourceConfirmationKind: source.sourceConfirmationKind,
+  )..progresses = Map<String, Progress>.from(source.progresses);
 }
 
 class _HistoryEpisodeMatch {

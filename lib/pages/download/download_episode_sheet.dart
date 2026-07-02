@@ -31,6 +31,7 @@ class _DownloadEpisodeSheetState extends State<DownloadEpisodeSheet> {
     final record = downloadController.getRecord(
       videoPageController.bangumiItem.id,
       videoPageController.currentPlugin.name,
+      sourceBindingKey: videoPageController.sourceBindingKey,
     );
     final downloadedStableIdsByRoadId = <({String stableId, String roadId})>{};
     final downloadedStableIdsByRoad = <({String stableId, int road})>{};
@@ -267,6 +268,7 @@ class _DownloadEpisodeSheetState extends State<DownloadEpisodeSheet> {
         pluginName: plugin.name,
         identity: identity,
         listIndex: listIndex,
+        sourceBinding: videoPageController.currentSourceBinding,
       );
     }
 
