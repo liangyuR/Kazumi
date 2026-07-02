@@ -32,7 +32,8 @@ class _DownloadEpisodeSheetState extends State<DownloadEpisodeSheet> {
       videoPageController.bangumiItem.id,
       videoPageController.currentPlugin.name,
     );
-    final downloadedStableIds = <({String stableId, String roadId})>{};
+    final downloadedStableIdsByRoadId = <({String stableId, String roadId})>{};
+    final downloadedStableIdsByRoad = <({String stableId, int road})>{};
     if (record != null) {
       for (final entry in record.episodes.entries) {
         if (entry.value.status == DownloadStatus.completed ||
@@ -40,10 +41,18 @@ class _DownloadEpisodeSheetState extends State<DownloadEpisodeSheet> {
             entry.value.status == DownloadStatus.pending) {
           final stableId = entry.value.stableId;
           if (stableId.isNotEmpty) {
-            downloadedStableIds.add((
-              stableId: stableId,
-              roadId: entry.value.roadId,
-            ));
+            final roadId = entry.value.roadId.trim();
+            if (roadId.isNotEmpty) {
+              downloadedStableIdsByRoadId.add((
+                stableId: stableId,
+                roadId: roadId,
+              ));
+            } else {
+              downloadedStableIdsByRoad.add((
+                stableId: stableId,
+                road: entry.value.road,
+              ));
+            }
           }
         }
       }
@@ -90,7 +99,10 @@ class _DownloadEpisodeSheetState extends State<DownloadEpisodeSheet> {
                           final identity = currentRoadData.data[i - 1];
                           if (!isDownloadedEpisodeIdentity(
                             identity,
-                            downloadedStableIds: downloadedStableIds,
+                            downloadedStableIdsByRoadId:
+                                downloadedStableIdsByRoadId,
+                            downloadedStableIdsByRoad:
+                                downloadedStableIdsByRoad,
                           )) {
                             _selectedListIndexes.add(i);
                           }
@@ -128,7 +140,8 @@ class _DownloadEpisodeSheetState extends State<DownloadEpisodeSheet> {
                   final identity = currentRoadData.data[index];
                   final isDownloaded = isDownloadedEpisodeIdentity(
                     identity,
-                    downloadedStableIds: downloadedStableIds,
+                    downloadedStableIdsByRoadId: downloadedStableIdsByRoadId,
+                    downloadedStableIdsByRoad: downloadedStableIdsByRoad,
                   );
                   final isSelected = _selectedListIndexes.contains(listIndex);
                   final identifier = identity.title;
@@ -265,13 +278,24 @@ class _DownloadEpisodeSheetState extends State<DownloadEpisodeSheet> {
 
 bool isDownloadedEpisodeIdentity(
   EpisodeIdentity identity, {
-  required Set<({String stableId, String roadId})> downloadedStableIds,
+  required Set<({String stableId, String roadId})> downloadedStableIdsByRoadId,
+  required Set<({String stableId, int road})> downloadedStableIdsByRoad,
 }) {
-  return identity.stableId.isNotEmpty &&
-      downloadedStableIds.contains((
-        stableId: identity.stableId,
-        roadId: identity.roadId,
-      ));
+  final stableId = identity.stableId.trim();
+  if (stableId.isEmpty) {
+    return false;
+  }
+  final roadId = identity.roadId.trim();
+  if (roadId.isNotEmpty) {
+    return downloadedStableIdsByRoadId.contains((
+      stableId: stableId,
+      roadId: roadId,
+    ));
+  }
+  return downloadedStableIdsByRoad.contains((
+    stableId: stableId,
+    road: identity.roadIndex,
+  ));
 }
 
 int? downloadEpisodeOrdinalForSelection(EpisodeIdentity identity) {

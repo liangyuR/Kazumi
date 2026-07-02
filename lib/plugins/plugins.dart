@@ -70,7 +70,8 @@ class Plugin {
   String chapterResult;
 
   /// 可选：抓取源站“稳定线路标识”的 XPath（相对每个 [chapterRoads] 节点）。
-  /// 命中时作为 [Road.roadId]；为空则由该线路内 episode stableId 集合派生。
+  /// 命中时作为 [Road.roadId]；为空或未命中时保持空字符串，由下游使用
+  /// `road` 下标作为临时作用域。
   String roadId;
 
   /// 可选：抓取源站“稳定 episode 标识”的 XPath（相对每个 [chapterResult] 节点）。
@@ -292,88 +293,74 @@ class Plugin {
         headers: httpHeaders,
         cancelToken: cancelToken,
       );
-      var htmlElement = parse(htmlString).documentElement!;
-      int count = 1;
-      htmlElement.queryXPath(chapterRoads).nodes.forEach((element) {
-        try {
-          final int roadIndex = count - 1;
-          final List<EpisodeIdentity> episodes = [];
-          element.queryXPath(chapterResult).nodes.forEach((item) {
-            final String rawUrl = item.node.attributes['href'] ?? '';
-            final String itemName =
-                (item.node.text ?? '').replaceAll(RegExp(r'\s+'), '');
-            final String normalizedUrl = normalizeEpisodeUrl(baseUrl, rawUrl);
-            final String stableId =
-                _resolveEpisodeStableId(item, baseUrl, normalizedUrl);
-            if (stableId.isEmpty) {
-              KazumiLogger()
-                  .w('Plugin: $name skipped episode without stable identity');
-              return;
-            }
-            episodes.add(
-              EpisodeIdentity(
-                stableId: stableId,
-                pageUrl: normalizedUrl,
-                title: itemName,
-                ordinal: _resolveEpisodeOrdinal(item, itemName),
-                roadIndex: roadIndex,
-              ),
-            );
-          });
-          if (episodes.isNotEmpty) {
-            final String resolvedRoadId =
-                _resolveRoadStableId(element, episodes, roadIndex);
-            roadList.add(Road(
-              name: '播放线路$count',
-              roadId: resolvedRoadId,
-              data: episodes
-                  .map((episode) => episode.copyWith(roadId: resolvedRoadId))
-                  .toList(),
-            ));
-            count++;
-          }
-        } catch (_) {}
-      });
+      roadList = _parseChapterRoads(htmlString);
     } catch (_) {}
+    return roadList;
+  }
+
+  List<Road> testQueryChapterRoads(String htmlString) {
+    return _parseChapterRoads(htmlString);
+  }
+
+  List<Road> _parseChapterRoads(String htmlString) {
+    final List<Road> roadList = [];
+    var htmlElement = parse(htmlString).documentElement!;
+    int count = 1;
+    htmlElement.queryXPath(chapterRoads).nodes.forEach((element) {
+      try {
+        final int roadIndex = count - 1;
+        final List<EpisodeIdentity> episodes = [];
+        element.queryXPath(chapterResult).nodes.forEach((item) {
+          final String rawUrl = item.node.attributes['href'] ?? '';
+          final String itemName =
+              (item.node.text ?? '').replaceAll(RegExp(r'\s+'), '');
+          final String normalizedUrl = normalizeEpisodeUrl(baseUrl, rawUrl);
+          final String stableId =
+              _resolveEpisodeStableId(item, baseUrl, normalizedUrl);
+          if (stableId.isEmpty) {
+            KazumiLogger()
+                .w('Plugin: $name skipped episode without stable identity');
+            return;
+          }
+          episodes.add(
+            EpisodeIdentity(
+              stableId: stableId,
+              pageUrl: normalizedUrl,
+              title: itemName,
+              ordinal: _resolveEpisodeOrdinal(item, itemName),
+              roadIndex: roadIndex,
+            ),
+          );
+        });
+        if (episodes.isNotEmpty) {
+          final String resolvedRoadId = _resolveRoadStableId(element);
+          roadList.add(Road(
+            name: '播放线路$count',
+            roadId: resolvedRoadId,
+            data: episodes
+                .map((episode) => episode.copyWith(roadId: resolvedRoadId))
+                .toList(),
+          ));
+          count++;
+        }
+      } catch (_) {}
+    });
     return roadList;
   }
 
   /// 计算线路的稳定身份 [Road.roadId]。
   ///
-  /// 优先使用规则配置的 [roadId] XPath 抓取源站显式标识；为空或未命中时，
-  /// 用本线路内 episode stableId 的无序签名派生。后者能抵御线路数组重排，
-  /// 但无法区分两个 episode 集合完全相同的线路；这种源站需要显式 [roadId]。
-  String _resolveRoadStableId(
-    dynamic roadNode,
-    List<EpisodeIdentity> episodes,
-    int roadIndex,
-  ) {
+  /// 只使用规则配置的 [roadId] XPath 抓取源站显式标识；为空或未命中时返回
+  /// 空字符串。空 [roadId] 表示当前规则没有稳定线路身份，下游只能在
+  /// `road` 下标作用域内临时消歧。
+  String _resolveRoadStableId(dynamic roadNode) {
     if (roadId.isNotEmpty) {
       final explicit = _extractNodeValue(roadNode, roadId);
       if (explicit.isNotEmpty) {
         return explicit;
       }
     }
-
-    final ids = episodes
-        .map((episode) => episode.stableId.trim())
-        .where((id) => id.isNotEmpty)
-        .toSet()
-        .toList()
-      ..sort();
-    if (ids.isEmpty) {
-      return 'road-index:$roadIndex';
-    }
-    return 'episodes:${ids.length}:${_stableStringHash(ids.join('\n'))}';
-  }
-
-  String _stableStringHash(String value) {
-    var hash = 0x811c9dc5;
-    for (final codeUnit in value.codeUnits) {
-      hash ^= codeUnit;
-      hash = (hash * 0x01000193) & 0x7fffffff;
-    }
-    return hash.toRadixString(16).padLeft(8, '0');
+    return '';
   }
 
   /// 计算单集的稳定身份 [EpisodeIdentity.stableId]。

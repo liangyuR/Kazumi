@@ -56,7 +56,7 @@ class Road {
 | `episodeId` | 抽取源站稳定单集标识 | 空时用归一化后的相对 path 作为 `stableId` |
 | `episodeTitle` | 抽取展示标题 | 空时使用 `第N集` 占位 |
 | `episodeOrder` | 抽取对齐 Bangumi 的集序号 | 空时保留标题解析作为排序/弹幕降级，不写回身份 |
-| `roadId` | 抽取源站稳定线路标识 | 空时用线路内 episode stableId 集合 hash；仍失败时用 `road-index:N` |
+| `roadId` | 抽取源站稳定线路标识 | 空时保持为空，表示没有稳定线路身份 |
 
 `Plugin.querychapterRoads` 是唯一允许从 HTML/XPath/URL fallback 构造身份的边界。若 `episodeId` 与 URL fallback 都无法产出非空 `stableId`，该 episode 不进入 `Road.data`。
 
@@ -66,7 +66,7 @@ class Road {
 
 - `PlaybackHistoryIdentity.canRecord` 要求 `stableId` 非空。
 - `History` 和 `Progress` 持久化 `stableId` 与 `roadId`。
-- `History.progresses` 使用稳定字符串 key：优先 `roadId + stableId`，缺少 `roadId` 时才使用受控 road 作用域；集号只保留在 `Progress.episode` 作为展示/排序信息。
+- `History.progresses` 使用稳定字符串 key：优先 `roadId + stableId`；缺少 `roadId` 时才使用受控 `road + stableId` 作用域，且不把 `road` 下标解释为稳定线路身份。集号只保留在 `Progress.episode` 作为展示/排序信息。
 - `findProgress` / `clearProgress` / `getLastWatchingProgress` 只按 `stableId + roadId`、或没有 `roadId` 时按 `stableId + road`、或无线路信息时唯一 `stableId` 命中。
 - 不再用 `episodePageUrl` 或 episode 数组下标回填身份。
 

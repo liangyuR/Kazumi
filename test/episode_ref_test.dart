@@ -475,7 +475,10 @@ void main() {
       expect(
         isDownloadedEpisodeIdentity(
           identity,
-          downloadedStableIds: {(stableId: '/play/1', roadId: 'source-a')},
+          downloadedStableIdsByRoadId: {
+            (stableId: '/play/1', roadId: 'source-a')
+          },
+          downloadedStableIdsByRoad: const {},
         ),
         isTrue,
       );
@@ -493,20 +496,56 @@ void main() {
       expect(
         isDownloadedEpisodeIdentity(
           identity,
-          downloadedStableIds: {
+          downloadedStableIdsByRoadId: {
             (stableId: 'shared-episode', roadId: 'source-a')
           },
+          downloadedStableIdsByRoad: const {},
         ),
         isFalse,
       );
       expect(
         isDownloadedEpisodeIdentity(
           identity,
-          downloadedStableIds: {
+          downloadedStableIdsByRoadId: {
             (stableId: 'shared-episode', roadId: 'source-b')
           },
+          downloadedStableIdsByRoad: const {},
         ),
         isTrue,
+      );
+    });
+
+    test('scopes downloaded stableId by road index when roadId is empty', () {
+      final road0Identity = _identity(
+        'shared-episode',
+        '线路1 第1话',
+        ordinal: 1,
+        roadIndex: 0,
+        roadId: '',
+      );
+      final road1Identity = _identity(
+        'shared-episode',
+        '线路2 第1话',
+        ordinal: 1,
+        roadIndex: 1,
+        roadId: '',
+      );
+
+      expect(
+        isDownloadedEpisodeIdentity(
+          road0Identity,
+          downloadedStableIdsByRoadId: const {},
+          downloadedStableIdsByRoad: {(stableId: 'shared-episode', road: 0)},
+        ),
+        isTrue,
+      );
+      expect(
+        isDownloadedEpisodeIdentity(
+          road1Identity,
+          downloadedStableIdsByRoadId: const {},
+          downloadedStableIdsByRoad: {(stableId: 'shared-episode', road: 0)},
+        ),
+        isFalse,
       );
     });
 

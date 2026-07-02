@@ -32,7 +32,7 @@ class Road {
 | `episodeId` | 每个 `chapterResult` 节点 | 抽取源站稳定单集 id/slug | 用归一化相对 URL 派生 `stableId` |
 | `episodeTitle` | 每个 `chapterResult` 节点 | 抽取展示标题 | 使用节点文本或 `第N集` |
 | `episodeOrder` | 每个 `chapterResult` 节点 | 抽取排序/弹幕序号 | 标题解析；失败则为 `null` |
-| `roadId` | 每个 `chapterRoads` 节点 | 抽取源站稳定线路 id | 使用该线路 episode `stableId` 集合 hash；仍失败则 `road-index:N` |
+| `roadId` | 每个 `chapterRoads` 节点 | 抽取源站稳定线路 id | 保持为空，表示没有稳定线路身份 |
 
 `chapterRoads` 先选出线路节点，`chapterResult` 再在线路节点内选出单集节点。`episodeId`、`episodeTitle`、`episodeOrder` 都相对单集节点解析；`roadId` 相对线路节点解析。
 
@@ -68,11 +68,7 @@ flowchart TD
 
 如果上述两步仍无法得到非空 `stableId`，`Plugin.querychapterRoads` 会跳过该 episode；播放器、历史和下载层不会再补身份。
 
-`roadId` 构建优先级：
-
-1. `roadId` XPath 抽取到的非空值。
-2. 当前线路内所有非空 episode `stableId` 排序后计算 hash。
-3. `road-index:N`。
+`roadId` 只使用 `roadId` XPath 抽取到的非空值。未配置或未命中时保持为空，避免写入会随更新集数变化的派生线路身份；下游只能在 `road` 下标作用域内临时消歧。
 
 ## 4. 下游消费
 
